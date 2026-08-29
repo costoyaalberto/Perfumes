@@ -1,0 +1,376 @@
+import { api } from '../api.js';
+import { getTiendas } from '../store.js';
+import { openModal, closeModal, confirmDialog } from '../modal.js';
+import { buscarCoincidencias, renderCoincidenciasHtml } from '../duplicados.js';
+import { formatCLP, escapeHtml, toast } from '../utils.js';
+
+const content = document.getElementById('por-probar-content');
+let rows = [];
+
+export async function render() {
+  content.innerHTML = '<p class="empty-state">Cargando…</p>';
+  rows = await api.listarPorProbar();
+  if (!rows.length) {
+    content.innerHTML = '<p class="empty-state">No tienes perfumes por probar todavía. Toca "+ Nuevo" para agregar uno.</p>';
+    return;
+  }
+  const grupos = new Map();
+  for (const r of rows) {
+    if (!grupos.has(r.tienda_nombre)) grupos.set(r.tienda_nombre, []);
+    grupos.get(r.tienda_nombre).push(r);
+  }
+  const html = [...grupos.entries()].map(([tienda, items]) => `
+    <div class="store-group">
+      <h3>${escapeHtml(tienda)} <span style="font-weight:400;color:var(--muted);font-size:0.8rem;">(${items.length})</span></h3>
+      ${items.map(cardHtml).join('')}
+    </div>
+  `).join('');
+  content.innerHTML = html;
+}
+
+function cardHtml(r) {
+  const dispChip = r.disponibilidad === 'con_probador'
+    ? '<span class="chip chip-ok">Con probador</span>'
+    : '<span class="chip chip-warn">Sin probador</span>';
+  const modChip = r.modalidad === 'comprar_aqui'
+    ? '<span class="chip chip-buy">Comprar aquí</span>'
+    : '<span class="chip chip-try">Solo probar</span>';
+  return `
+    <div class="card" data-ppt-id="${r.por_probar_tienda_id}">
+      <div class="card-title">${escapeHtml(r.nombre_perfume)}</div>
+      ${r.referencia ? `<div class="card-ref">Ref: ${escapeHtml(r.referencia)}</div>` : ''}
+      <div class="card-meta">
+        <span class="chip chip-price">${formatCLP(r.precio)}</span>
+        ${dispChip}
+        ${modChip}
+      </div>
+      ${r.comentario ? `<div class="card-comment">${escapeHtml(r.comentario)}</div>` : ''}
+      <div class="card-actions">
+        <button class="btn btn-success btn-sm" data-action="me-gusto">Me gustó</button>
+        <button class="btn btn-danger btn-sm" data-action="no-me-gusto">No me gustó</button>
+        ${r.disponibilidad === 'con_probador' ? '<button class="btn btn-outline btn-sm" data-action="sin-probador">Sin probador</button>' : ''}
+        <button class="btn btn-outline btn-sm" data-action="agregar-tienda">+ Otra tienda</button>
+      </div>
+    </div>
+  `;
+}
+
+function findRow(pptId) {
+  return rows.find((r) => r.por_probar_tienda_id === pptId);
+}
+
+content.addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-action]');
+  if (!btn) return;
+  const card = e.target.closest('[data-ppt-id]');
+  const pptId = card.dataset.pptId;
+  const row = findRow(pptId);
+  if (!row) return;
+
+  if (btn.dataset.action === 'me-gusto') return handleMeGusto(row);
+  if (btn.dataset.action === 'no-me-gusto') return handleNoMeGusto(row);
+  if (btn.dataset.action === 'sin-probador') return handleSinProbador(row);
+  if (btn.dataset.action === 'agregar-tienda') return handleAgregarTienda(row);
+});
+
+async function handleSinProbador(row) {
+  const ok = await confirmDialog({
+    title: 'Marcar sin probador',
+    message: `¿Confirmas que "${escapeHtml(row.nombre_perfume)}" ya no tiene probador disponible en ${escapeHtml(row.tienda_nombre)}?`,
+  });
+  if (!ok) return;
+  try {
+    await api.marcarSinProbador(row.por_probar_tienda_id);
+    toast('Actualizado');
+    render();
+  } catch (err) {
+    toast('Error: ' + err.message, true);
+  }
+}
+
+async function handleMeGusto(row) {
+  const esCompra = row.modalidad === 'comprar_aqui';
+  const el = openModal(`
+    <h3>Me gustó — ${escapeHtml(row.nombre_perfume)}</h3>
+    ${esCompra
+      ? `<p>Se moverá a tu <strong>Colección</strong>. Confirma el precio final de compra.</p>
+         <form id="form-me-gusto">
+           <div class="form-row">
+             <label>Precio final</label>
+             <input type="number" name="precio" min="0" step="1" value="${row.precio ?? ''}" required />
+           </div>
+           <div class="modal-actions">
+             <button type="button" class="btn btn-secondary" data-action="cancel">Cancelar</button>
+             <button type="submit" class="btn btn-success">Mover a Colección</button>
+           </div>
+         </form>`
+      : `<p>Se moverá a <strong>Pendientes de Compra</strong> (modalidad "solo probar").</p>
+         <div class="modal-actions">
+           <button type="button" class="btn btn-secondary" data-action="cancel">Cancelar</button>
+           <button type="button" class="btn btn-success" data-action="confirmar">Mover a Pendientes</button>
+         </div>`}
+  `);
+  el.querySelector('[data-action="cancel"]').addEventListener('click', closeModal);
+  if (esCompra) {
+    el.querySelector('#form-me-gusto').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const precio = Number(new FormData(ev.target).get('precio'));
+      try {
+        await api.meGusto(row.por_probar_tienda_id, precio);
+        closeModal();
+        toast('Movido a Colección 🎉');
+        render();
+      } catch (err) {
+        toast('Error: ' + err.message, true);
+      }
+    });
+  } else {
+    el.querySelector('[data-action="confirmar"]').addEventListener('click', async () => {
+      try {
+        await api.meGusto(row.por_probar_tienda_id, null);
+        closeModal();
+        toast('Movido a Pendientes de Compra');
+        render();
+      } catch (err) {
+        toast('Error: ' + err.message, true);
+      }
+    });
+  }
+}
+
+async function handleNoMeGusto(row) {
+  const el = openModal(`
+    <h3>No me gustó — ${escapeHtml(row.nombre_perfume)}</h3>
+    <p>Se moverá a la <strong>Lista Negra</strong> y se quitará de todas las tiendas donde estaba listado.</p>
+    <form id="form-no-me-gusto">
+      <div class="form-row">
+        <label>Motivo (obligatorio)</label>
+        <textarea name="motivo" rows="3" required></textarea>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" data-action="cancel">Cancelar</button>
+        <button type="submit" class="btn btn-danger">Mover a Lista Negra</button>
+      </div>
+    </form>
+  `);
+  el.querySelector('[data-action="cancel"]').addEventListener('click', closeModal);
+  el.querySelector('#form-no-me-gusto').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const motivo = new FormData(ev.target).get('motivo').trim();
+    if (!motivo) return;
+    try {
+      await api.noMeGusto(row.por_probar_tienda_id, motivo);
+      closeModal();
+      toast('Movido a Lista Negra');
+      render();
+    } catch (err) {
+      toast('Error: ' + err.message, true);
+    }
+  });
+}
+
+async function handleAgregarTienda(row) {
+  const todasTiendas = await getTiendas();
+  const yaListadas = new Set(rows.filter((r) => r.por_probar_id === row.por_probar_id).map((r) => r.tienda_id));
+  const disponibles = todasTiendas.filter((t) => t.activa && !yaListadas.has(t.id));
+  if (!disponibles.length) {
+    toast('Ya está listado en todas las tiendas activas', true);
+    return;
+  }
+  const el = openModal(`
+    <h3>Agregar tienda — ${escapeHtml(row.nombre_perfume)}</h3>
+    <form id="form-agregar-tienda">
+      ${storeAndPriceFieldsHtml(disponibles)}
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" data-action="cancel">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Agregar</button>
+      </div>
+    </form>
+  `);
+  el.querySelector('[data-action="cancel"]').addEventListener('click', closeModal);
+  el.querySelector('#form-agregar-tienda').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target);
+    try {
+      await api.agregarTiendaAPorProbar({
+        p_por_probar_id: row.por_probar_id,
+        p_tienda_id: fd.get('tienda_id'),
+        p_precio: fd.get('precio') ? Number(fd.get('precio')) : null,
+        p_comentario: fd.get('comentario') || null,
+        p_disponibilidad: fd.get('disponibilidad'),
+        p_modalidad: fd.get('modalidad'),
+      });
+      closeModal();
+      toast('Tienda agregada');
+      render();
+    } catch (err) {
+      toast('Error: ' + err.message, true);
+    }
+  });
+}
+
+function storeAndPriceFieldsHtml(tiendas, selected = {}) {
+  const sel = {
+    tienda_id: selected.tienda_id || '',
+    precio: selected.precio ?? '',
+    comentario: selected.comentario || '',
+    disponibilidad: selected.disponibilidad || 'con_probador',
+    modalidad: selected.modalidad || 'comprar_aqui',
+  };
+  return `
+    <div class="form-row">
+      <label>Tienda</label>
+      <select name="tienda_id" required>
+        ${tiendas.map((t) => `<option value="${t.id}" ${t.id === sel.tienda_id ? 'selected' : ''}>${escapeHtml(t.nombre)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-row-inline">
+      <div class="form-row">
+        <label>Precio</label>
+        <input type="number" name="precio" min="0" step="1" value="${escapeHtml(sel.precio)}" />
+      </div>
+    </div>
+    <div class="form-row">
+      <label>Comentario</label>
+      <textarea name="comentario" rows="2">${escapeHtml(sel.comentario)}</textarea>
+    </div>
+    <div class="form-row">
+      <label>Disponibilidad</label>
+      <div class="radio-group">
+        <label><input type="radio" name="disponibilidad" value="con_probador" ${sel.disponibilidad === 'con_probador' ? 'checked' : ''} /> Con probador</label>
+        <label><input type="radio" name="disponibilidad" value="sin_probador" ${sel.disponibilidad === 'sin_probador' ? 'checked' : ''} /> Sin probador</label>
+      </div>
+    </div>
+    <div class="form-row">
+      <label>Modalidad</label>
+      <div class="radio-group">
+        <label><input type="radio" name="modalidad" value="comprar_aqui" ${sel.modalidad === 'comprar_aqui' ? 'checked' : ''} /> Comprar aquí</label>
+        <label><input type="radio" name="modalidad" value="solo_probar" ${sel.modalidad === 'solo_probar' ? 'checked' : ''} /> Solo probar</label>
+      </div>
+    </div>
+  `;
+}
+
+// ---------------- Nuevo perfume ----------------
+
+document.getElementById('btn-nuevo-perfume').addEventListener('click', async () => {
+  const tiendas = (await getTiendas()).filter((t) => t.activa);
+  if (!tiendas.length) {
+    toast('Primero agrega al menos una tienda activa en la pestaña Tiendas', true);
+    return;
+  }
+  const el = openModal(`
+    <h3>Nuevo perfume por probar</h3>
+    <form id="form-nuevo-perfume">
+      <div class="form-row">
+        <label>Nombre del perfume</label>
+        <input type="text" name="nombre" required autofocus />
+      </div>
+      <div class="form-row">
+        <label>Referencia / a qué imita (opcional)</label>
+        <input type="text" name="referencia" />
+      </div>
+      ${storeAndPriceFieldsHtml(tiendas)}
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" data-action="cancel">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Guardar</button>
+      </div>
+    </form>
+  `);
+  el.querySelector('[data-action="cancel"]').addEventListener('click', closeModal);
+
+  const form = el.querySelector('#form-nuevo-perfume');
+
+  form.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(form);
+    const nombre = fd.get('nombre').trim();
+    if (!nombre) return;
+
+    const matches = await buscarCoincidencias(nombre);
+    if (matches.length) {
+      const proceed = await confirmDialog({
+        title: 'Posible duplicado',
+        message: renderCoincidenciasHtml(matches) + '¿Deseas agregarlo de todas formas?',
+        confirmLabel: 'Continuar de todas formas',
+      });
+      // confirmDialog reutiliza el mismo overlay, así que reemplaza el
+      // formulario en pantalla; si el usuario confirma, ya tenemos los
+      // datos capturados en fd y podemos guardar directamente.
+      if (!proceed) {
+        reopenNuevoPerfumeModal(nombre, fd);
+        return;
+      }
+    }
+
+    try {
+      const submitBtn = form.querySelector('button[type=submit]');
+      submitBtn.disabled = true;
+      await api.crearPorProbar({
+        p_nombre: nombre,
+        p_referencia: fd.get('referencia') || null,
+        p_tienda_id: fd.get('tienda_id'),
+        p_precio: fd.get('precio') ? Number(fd.get('precio')) : null,
+        p_comentario: fd.get('comentario') || null,
+        p_disponibilidad: fd.get('disponibilidad'),
+        p_modalidad: fd.get('modalidad'),
+      });
+      closeModal();
+      toast('Perfume agregado');
+      render();
+    } catch (err) {
+      toast('Error: ' + err.message, true);
+    }
+  });
+});
+
+async function reopenNuevoPerfumeModal(nombre, fd) {
+  // El usuario canceló el aviso de duplicado: reabre el formulario con
+  // los mismos valores para que pueda corregir el nombre si quiere.
+  const tiendas = (await getTiendas()).filter((t) => t.activa);
+  const el = openModal(`
+    <h3>Nuevo perfume por probar</h3>
+    <form id="form-nuevo-perfume">
+      <div class="form-row">
+        <label>Nombre del perfume</label>
+        <input type="text" name="nombre" required value="${escapeHtml(nombre)}" />
+      </div>
+      <div class="form-row">
+        <label>Referencia / a qué imita (opcional)</label>
+        <input type="text" name="referencia" value="${escapeHtml(fd.get('referencia') || '')}" />
+      </div>
+      ${storeAndPriceFieldsHtml(tiendas, {
+        tienda_id: fd.get('tienda_id'),
+        precio: fd.get('precio'),
+        comentario: fd.get('comentario'),
+        disponibilidad: fd.get('disponibilidad'),
+        modalidad: fd.get('modalidad'),
+      })}
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" data-action="cancel">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Guardar de todas formas</button>
+      </div>
+    </form>
+  `);
+  el.querySelector('[data-action="cancel"]').addEventListener('click', closeModal);
+  el.querySelector('#form-nuevo-perfume').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const fd2 = new FormData(ev.target);
+    try {
+      await api.crearPorProbar({
+        p_nombre: fd2.get('nombre').trim(),
+        p_referencia: fd2.get('referencia') || null,
+        p_tienda_id: fd2.get('tienda_id'),
+        p_precio: fd2.get('precio') ? Number(fd2.get('precio')) : null,
+        p_comentario: fd2.get('comentario') || null,
+        p_disponibilidad: fd2.get('disponibilidad'),
+        p_modalidad: fd2.get('modalidad'),
+      });
+      closeModal();
+      toast('Perfume agregado');
+      render();
+    } catch (err) {
+      toast('Error: ' + err.message, true);
+    }
+  });
+}

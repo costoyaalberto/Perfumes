@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Perfumes Tracker</title>
+<meta name="theme-color" content="#5b3c91" />
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<link rel="icon" href="icons/icon-192.png" />
+<link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+
+<!-- ===================== LOGIN ===================== -->
+<section id="view-login" class="view">
+  <div class="login-box">
+    <h1>🧴 Perfumes</h1>
+    <p class="muted">Ingresa tu PIN de 4 dígitos</p>
+    <form id="login-form" autocomplete="off">
+      <input id="pin-input" type="password" inputmode="numeric" pattern="\d{4}" maxlength="4"
+             placeholder="••••" autofocus />
+      <button type="submit" class="btn btn-primary">Entrar</button>
+    </form>
+    <p id="login-error" class="error-text"></p>
+  </div>
+</section>
+
+<!-- ===================== APP SHELL ===================== -->
+<div id="app-shell" class="hidden">
+  <header class="topbar">
+    <h1>🧴 Perfumes</h1>
+    <button id="btn-logout" class="btn-icon" title="Cerrar sesión en este dispositivo">⏻</button>
+  </header>
+
+  <main id="app-main">
+    <section id="view-por-probar" class="view">
+      <div class="view-header">
+        <h2>Por Probar</h2>
+        <button id="btn-nuevo-perfume" class="btn btn-primary">+ Nuevo</button>
+      </div>
+      <div id="por-probar-content" class="content"></div>
+    </section>
+
+    <section id="view-pendientes" class="view hidden">
+      <div class="view-header"><h2>Pendientes de Compra</h2></div>
+      <div id="pendientes-content" class="content"></div>
+    </section>
+
+    <section id="view-coleccion" class="view hidden">
+      <div class="view-header">
+        <h2>Colección</h2>
+        <input id="buscar-coleccion" class="search-input" type="search" placeholder="Buscar..." />
+      </div>
+      <div id="coleccion-content" class="content"></div>
+    </section>
+
+    <section id="view-lista-negra" class="view hidden">
+      <div class="view-header">
+        <h2>Lista Negra</h2>
+        <input id="buscar-lista-negra" class="search-input" type="search" placeholder="Buscar..." />
+      </div>
+      <div id="lista-negra-content" class="content"></div>
+    </section>
+
+    <section id="view-tiendas" class="view hidden">
+      <div class="view-header">
+        <h2>Tiendas</h2>
+        <button id="btn-nueva-tienda" class="btn btn-primary">+ Tienda</button>
+      </div>
+      <div id="tiendas-content" class="content"></div>
+    </section>
+
+    <section id="view-importar" class="view hidden">
+      <div class="view-header"><h2>Importar datos</h2></div>
+      <div id="importar-content" class="content"></div>
+    </section>
+  </main>
+
+  <nav class="tabbar">
+    <button data-route="por-probar" class="tab-btn active">Por Probar</button>
+    <button data-route="pendientes" class="tab-btn">Pendientes<span id="badge-pendientes" class="badge hidden">0</span></button>
+    <button data-route="coleccion" class="tab-btn">Colección</button>
+    <button data-route="lista-negra" class="tab-btn">Lista Negra</button>
+    <button data-route="tiendas" class="tab-btn">Tiendas</button>
+    <button data-route="importar" class="tab-btn">Importar</button>
+  </nav>
+</div>
+
+<!-- ===================== MODAL GENÉRICO ===================== -->
+<div id="modal-overlay" class="modal-overlay hidden">
+  <div id="modal-box" class="modal-box"></div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
