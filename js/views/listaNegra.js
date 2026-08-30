@@ -3,13 +3,32 @@ import { formatFecha, escapeHtml, normalizarNombre } from '../utils.js';
 
 const content = document.getElementById('lista-negra-content');
 const searchInput = document.getElementById('buscar-lista-negra');
+const sortBtn = document.getElementById('btn-orden-lista-negra');
 let items = [];
+let sortMode = 'nombre'; // 'nombre' | 'fecha'
 
 export async function render() {
   content.innerHTML = '<p class="empty-state">Cargando…</p>';
   items = await api.listarListaNegra();
   searchInput.value = '';
-  draw(items);
+  refresh();
+}
+
+function currentFiltered() {
+  const q = normalizarNombre(searchInput.value);
+  let list = items;
+  if (q) list = list.filter((p) => normalizarNombre(p.nombre_perfume).includes(q));
+  list = [...list];
+  if (sortMode === 'fecha') {
+    list.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+  } else {
+    list.sort((a, b) => a.nombre_perfume.localeCompare(b.nombre_perfume, 'es'));
+  }
+  return list;
+}
+
+function refresh() {
+  draw(currentFiltered());
 }
 
 function draw(list) {
@@ -30,8 +49,11 @@ function draw(list) {
   `).join('');
 }
 
-searchInput.addEventListener('input', () => {
-  const q = normalizarNombre(searchInput.value);
-  if (!q) return draw(items);
-  draw(items.filter((p) => normalizarNombre(p.nombre_perfume).includes(q)));
+searchInput.addEventListener('input', refresh);
+
+sortBtn.addEventListener('click', () => {
+  sortMode = sortMode === 'nombre' ? 'fecha' : 'nombre';
+  sortBtn.textContent = sortMode === 'nombre' ? 'Ordenar: Nombre' : 'Ordenar: Fecha (recientes primero)';
+  sortBtn.classList.toggle('active', sortMode === 'fecha');
+  refresh();
 });

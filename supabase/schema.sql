@@ -349,6 +349,61 @@ begin
 end;
 $$;
 
+-- Edita nombre/referencia (compartidos por el perfume en todas sus tiendas)
+-- y precio/comentario/disponibilidad/modalidad (propios de esta tienda).
+create or replace function public.editar_por_probar(
+  p_token uuid, p_por_probar_tienda_id uuid,
+  p_nombre_perfume text, p_referencia text,
+  p_precio numeric, p_comentario text, p_disponibilidad text, p_modalidad text
+)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_por_probar_id uuid;
+begin
+  perform check_token(p_token);
+  select por_probar_id into v_por_probar_id from por_probar_tienda where id = p_por_probar_tienda_id;
+  if v_por_probar_id is null then
+    raise exception 'No se encontró el registro';
+  end if;
+
+  update por_probar
+    set nombre_perfume = trim(p_nombre_perfume), referencia = nullif(trim(p_referencia), '')
+    where id = v_por_probar_id;
+
+  update por_probar_tienda
+    set precio = p_precio, comentario = p_comentario,
+        disponibilidad = coalesce(p_disponibilidad, disponibilidad),
+        modalidad = coalesce(p_modalidad, modalidad)
+    where id = p_por_probar_tienda_id;
+end;
+$$;
+
+-- Quita el perfume de ESTA tienda puntual (no lo mueve a colección ni a
+-- lista negra). Si era la única tienda donde estaba listado, borra
+-- también el registro huérfano de por_probar.
+create or replace function public.eliminar_por_probar_tienda(p_token uuid, p_por_probar_tienda_id uuid)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_por_probar_id uuid;
+begin
+  perform check_token(p_token);
+  select por_probar_id into v_por_probar_id from por_probar_tienda where id = p_por_probar_tienda_id;
+  if v_por_probar_id is null then
+    raise exception 'No se encontró el registro';
+  end if;
+
+  delete from por_probar_tienda where id = p_por_probar_tienda_id;
+
+  if not exists (select 1 from por_probar_tienda where por_probar_id = v_por_probar_id) then
+    delete from por_probar where id = v_por_probar_id;
+  end if;
+end;
+$$;
+
 -- ---------------------------------------------------------------------
 -- 6. PENDIENTES DE COMPRA
 -- ---------------------------------------------------------------------
@@ -560,6 +615,7 @@ revoke all on function
   public.listar_tiendas, public.crear_tienda, public.set_tienda_activa,
   public.listar_por_probar, public.crear_por_probar, public.agregar_tienda_a_por_probar,
   public.marcar_sin_probador, public.me_gusto, public.no_me_gusto,
+  public.editar_por_probar, public.eliminar_por_probar_tienda,
   public.listar_pendientes_compra, public.ya_lo_compre,
   public.listar_coleccion, public.listar_lista_negra,
   public.listar_candidatos_duplicado,
@@ -577,6 +633,8 @@ grant execute on function public.agregar_tienda_a_por_probar(uuid, uuid, uuid, n
 grant execute on function public.marcar_sin_probador(uuid, uuid) to anon;
 grant execute on function public.me_gusto(uuid, uuid, numeric) to anon;
 grant execute on function public.no_me_gusto(uuid, uuid, text) to anon;
+grant execute on function public.editar_por_probar(uuid, uuid, text, text, numeric, text, text, text) to anon;
+grant execute on function public.eliminar_por_probar_tienda(uuid, uuid) to anon;
 grant execute on function public.listar_pendientes_compra(uuid) to anon;
 grant execute on function public.ya_lo_compre(uuid, uuid, uuid, text, numeric) to anon;
 grant execute on function public.listar_coleccion(uuid) to anon;

@@ -128,6 +128,18 @@ html, body {
 }
 .search-input { max-width: 220px; }
 
+.filter-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.toggle-btn.active {
+  background: var(--violet);
+  color: white;
+  border-color: var(--violet);
+}
+
 .btn {
   border: none;
   border-radius: 8px;
@@ -191,7 +203,21 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   border-bottom: 2px solid var(--cream);
   padding-bottom: 6px;
   margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
 }
+.store-group h3 .chevron {
+  font-size: 1rem;
+  color: var(--muted);
+  transition: transform 0.15s;
+  margin-left: 8px;
+}
+.store-group.collapsed h3 .chevron { transform: rotate(-90deg); }
+.store-group.collapsed .store-cards { display: none; }
+.card-clickable { cursor: pointer; }
 .card {
   background: var(--card-bg);
   border-radius: var(--radius);

@@ -3,13 +3,35 @@ import { formatCLP, formatFecha, escapeHtml, normalizarNombre } from '../utils.j
 
 const content = document.getElementById('coleccion-content');
 const searchInput = document.getElementById('buscar-coleccion');
+const sortBtn = document.getElementById('btn-orden-coleccion');
 let items = [];
+let sortMode = 'nombre'; // 'nombre' | 'fecha'
 
 export async function render() {
   content.innerHTML = '<p class="empty-state">Cargando…</p>';
   items = await api.listarColeccion();
   searchInput.value = '';
-  draw(items);
+  refresh();
+}
+
+function currentFiltered() {
+  const q = normalizarNombre(searchInput.value);
+  let list = items;
+  if (q) {
+    list = list.filter((p) => normalizarNombre(p.nombre_perfume).includes(q)
+      || normalizarNombre(p.referencia || '').includes(q));
+  }
+  list = [...list];
+  if (sortMode === 'fecha') {
+    list.sort((a, b) => new Date(b.fecha_compra) - new Date(a.fecha_compra));
+  } else {
+    list.sort((a, b) => a.nombre_perfume.localeCompare(b.nombre_perfume, 'es'));
+  }
+  return list;
+}
+
+function refresh() {
+  draw(currentFiltered());
 }
 
 function draw(list) {
@@ -31,9 +53,11 @@ function draw(list) {
   `).join('');
 }
 
-searchInput.addEventListener('input', () => {
-  const q = normalizarNombre(searchInput.value);
-  if (!q) return draw(items);
-  draw(items.filter((p) => normalizarNombre(p.nombre_perfume).includes(q)
-    || normalizarNombre(p.referencia || '').includes(q)));
+searchInput.addEventListener('input', refresh);
+
+sortBtn.addEventListener('click', () => {
+  sortMode = sortMode === 'nombre' ? 'fecha' : 'nombre';
+  sortBtn.textContent = sortMode === 'nombre' ? 'Ordenar: Nombre' : 'Ordenar: Fecha (recientes primero)';
+  sortBtn.classList.toggle('active', sortMode === 'fecha');
+  refresh();
 });

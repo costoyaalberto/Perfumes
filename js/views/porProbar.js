@@ -2,29 +2,55 @@ import { api } from '../api.js';
 import { getTiendas } from '../store.js';
 import { openModal, closeModal, confirmDialog } from '../modal.js';
 import { buscarCoincidencias, renderCoincidenciasHtml } from '../duplicados.js';
-import { formatCLP, escapeHtml, toast } from '../utils.js';
+import { formatCLP, escapeHtml, normalizarNombre, toast } from '../utils.js';
 
 const content = document.getElementById('por-probar-content');
+const searchInput = document.getElementById('buscar-por-probar');
+const btnFiltroSinProbador = document.getElementById('btn-filtro-sin-probador');
+
 let rows = [];
+const collapsedTiendas = new Set();
+let searchQuery = '';
+let onlySinProbador = false;
 
 export async function render() {
   content.innerHTML = '<p class="empty-state">Cargando…</p>';
   rows = await api.listarPorProbar();
+  draw();
+}
+
+function draw() {
   if (!rows.length) {
     content.innerHTML = '<p class="empty-state">No tienes perfumes por probar todavía. Toca "+ Nuevo" para agregar uno.</p>';
     return;
   }
+  const q = normalizarNombre(searchQuery);
+  let filtered = rows;
+  if (onlySinProbador) filtered = filtered.filter((r) => r.disponibilidad === 'sin_probador');
+  if (q) filtered = filtered.filter((r) => normalizarNombre(r.nombre_perfume).includes(q));
+
+  if (!filtered.length) {
+    content.innerHTML = '<p class="empty-state">Sin resultados con ese filtro.</p>';
+    return;
+  }
+
   const grupos = new Map();
-  for (const r of rows) {
+  for (const r of filtered) {
     if (!grupos.has(r.tienda_nombre)) grupos.set(r.tienda_nombre, []);
     grupos.get(r.tienda_nombre).push(r);
   }
-  const html = [...grupos.entries()].map(([tienda, items]) => `
-    <div class="store-group">
-      <h3>${escapeHtml(tienda)} <span style="font-weight:400;color:var(--muted);font-size:0.8rem;">(${items.length})</span></h3>
-      ${items.map(cardHtml).join('')}
+  const html = [...grupos.entries()].map(([tienda, items]) => {
+    const collapsed = collapsedTiendas.has(tienda);
+    return `
+    <div class="store-group ${collapsed ? 'collapsed' : ''}" data-tienda="${escapeHtml(tienda)}">
+      <h3>
+        <span>${escapeHtml(tienda)} <span style="font-weight:400;color:var(--muted);font-size:0.85rem;">(${items.length})</span></span>
+        <span class="chevron">▾</span>
+      </h3>
+      <div class="store-cards">${items.map(cardHtml).join('')}</div>
     </div>
-  `).join('');
+  `;
+  }).join('');
   content.innerHTML = html;
 }
 
@@ -36,7 +62,7 @@ function cardHtml(r) {
     ? '<span class="chip chip-buy">Comprar aquí</span>'
     : '<span class="chip chip-try">Solo probar</span>';
   return `
-    <div class="card" data-ppt-id="${r.por_probar_tienda_id}">
+    <div class="card card-clickable" data-ppt-id="${r.por_probar_tienda_id}">
       <div class="card-title">${escapeHtml(r.nombre_perfume)}</div>
       ${r.referencia ? `<div class="card-ref">Ref: ${escapeHtml(r.referencia)}</div>` : ''}
       <div class="card-meta">
@@ -59,19 +85,128 @@ function findRow(pptId) {
   return rows.find((r) => r.por_probar_tienda_id === pptId);
 }
 
+searchInput.addEventListener('input', () => {
+  searchQuery = searchInput.value;
+  draw();
+});
+
+btnFiltroSinProbador.addEventListener('click', () => {
+  onlySinProbador = !onlySinProbador;
+  btnFiltroSinProbador.classList.toggle('active', onlySinProbador);
+  draw();
+});
+
 content.addEventListener('click', async (e) => {
-  const btn = e.target.closest('button[data-action]');
-  if (!btn) return;
+  const h3 = e.target.closest('.store-group h3');
+  if (h3) {
+    const group = h3.closest('.store-group');
+    const tienda = group.dataset.tienda;
+    if (collapsedTiendas.has(tienda)) collapsedTiendas.delete(tienda);
+    else collapsedTiendas.add(tienda);
+    group.classList.toggle('collapsed');
+    return;
+  }
+
   const card = e.target.closest('[data-ppt-id]');
-  const pptId = card.dataset.pptId;
-  const row = findRow(pptId);
+  if (!card) return;
+  const row = findRow(card.dataset.pptId);
   if (!row) return;
 
-  if (btn.dataset.action === 'me-gusto') return handleMeGusto(row);
-  if (btn.dataset.action === 'no-me-gusto') return handleNoMeGusto(row);
-  if (btn.dataset.action === 'sin-probador') return handleSinProbador(row);
-  if (btn.dataset.action === 'agregar-tienda') return handleAgregarTienda(row);
+  const btn = e.target.closest('button[data-action]');
+  if (btn) {
+    if (btn.dataset.action === 'me-gusto') return handleMeGusto(row);
+    if (btn.dataset.action === 'no-me-gusto') return handleNoMeGusto(row);
+    if (btn.dataset.action === 'sin-probador') return handleSinProbador(row);
+    if (btn.dataset.action === 'agregar-tienda') return handleAgregarTienda(row);
+    return;
+  }
+
+  handleEditar(row);
 });
+
+async function handleEditar(row) {
+  const el = openModal(`
+    <h3>Editar — ${escapeHtml(row.tienda_nombre)}</h3>
+    <form id="form-editar">
+      <div class="form-row">
+        <label>Nombre del perfume</label>
+        <input type="text" name="nombre" required value="${escapeHtml(row.nombre_perfume)}" />
+      </div>
+      <div class="form-row">
+        <label>Referencia / a qué imita</label>
+        <input type="text" name="referencia" value="${escapeHtml(row.referencia || '')}" />
+      </div>
+      <p class="import-format">El nombre y la referencia se comparten si este perfume está listado en más de una tienda.</p>
+      <div class="form-row">
+        <label>Precio en ${escapeHtml(row.tienda_nombre)}</label>
+        <input type="number" name="precio" min="0" step="1" value="${row.precio ?? ''}" />
+      </div>
+      <div class="form-row">
+        <label>Comentario</label>
+        <textarea name="comentario" rows="2">${escapeHtml(row.comentario || '')}</textarea>
+      </div>
+      <div class="form-row">
+        <label>Disponibilidad</label>
+        <div class="radio-group">
+          <label><input type="radio" name="disponibilidad" value="con_probador" ${row.disponibilidad === 'con_probador' ? 'checked' : ''} /> Con probador</label>
+          <label><input type="radio" name="disponibilidad" value="sin_probador" ${row.disponibilidad === 'sin_probador' ? 'checked' : ''} /> Sin probador</label>
+        </div>
+      </div>
+      <div class="form-row">
+        <label>Modalidad</label>
+        <div class="radio-group">
+          <label><input type="radio" name="modalidad" value="comprar_aqui" ${row.modalidad === 'comprar_aqui' ? 'checked' : ''} /> Comprar aquí</label>
+          <label><input type="radio" name="modalidad" value="solo_probar" ${row.modalidad === 'solo_probar' ? 'checked' : ''} /> Solo probar</label>
+        </div>
+      </div>
+      <div class="modal-actions" style="justify-content:space-between;">
+        <button type="button" class="btn btn-danger btn-sm" data-action="eliminar">Quitar de esta tienda</button>
+        <div style="display:flex; gap:10px;">
+          <button type="button" class="btn btn-secondary" data-action="cancel">Cancelar</button>
+          <button type="submit" class="btn btn-primary">Guardar</button>
+        </div>
+      </div>
+    </form>
+  `);
+  el.querySelector('[data-action="cancel"]').addEventListener('click', closeModal);
+  el.querySelector('[data-action="eliminar"]').addEventListener('click', async () => {
+    const ok = await confirmDialog({
+      title: 'Quitar de esta tienda',
+      message: `¿Quitar "${escapeHtml(row.nombre_perfume)}" de ${escapeHtml(row.tienda_nombre)}? No se mueve a colección ni a lista negra, solo se borra esta tienda.`,
+      confirmLabel: 'Quitar',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await api.eliminarPorProbarTienda(row.por_probar_tienda_id);
+      closeModal();
+      toast('Eliminado');
+      render();
+    } catch (err) {
+      toast('Error: ' + err.message, true);
+    }
+  });
+  el.querySelector('#form-editar').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target);
+    try {
+      await api.editarPorProbar({
+        p_por_probar_tienda_id: row.por_probar_tienda_id,
+        p_nombre_perfume: fd.get('nombre').trim(),
+        p_referencia: fd.get('referencia') || null,
+        p_precio: fd.get('precio') ? Number(fd.get('precio')) : null,
+        p_comentario: fd.get('comentario') || null,
+        p_disponibilidad: fd.get('disponibilidad'),
+        p_modalidad: fd.get('modalidad'),
+      });
+      closeModal();
+      toast('Guardado');
+      render();
+    } catch (err) {
+      toast('Error: ' + err.message, true);
+    }
+  });
+}
 
 async function handleSinProbador(row) {
   const ok = await confirmDialog({

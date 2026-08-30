@@ -54,6 +54,8 @@ export const api = {
   marcarSinProbador: (p_por_probar_tienda_id) => rpc('marcar_sin_probador', { p_por_probar_tienda_id }),
   meGusto: (p_por_probar_tienda_id, p_precio_final) => rpc('me_gusto', { p_por_probar_tienda_id, p_precio_final }),
   noMeGusto: (p_por_probar_tienda_id, p_motivo) => rpc('no_me_gusto', { p_por_probar_tienda_id, p_motivo }),
+  editarPorProbar: (args) => rpc('editar_por_probar', args),
+  eliminarPorProbarTienda: (p_por_probar_tienda_id) => rpc('eliminar_por_probar_tienda', { p_por_probar_tienda_id }),
 
   listarPendientes: () => rpc('listar_pendientes_compra'),
   yaLoCompre: (args) => rpc('ya_lo_compre', args),
