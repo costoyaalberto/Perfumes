@@ -1,26 +1,37 @@
 import { api } from '../api.js';
 import { getTiendas } from '../store.js';
-import { openModal, closeModal } from '../modal.js';
+import { openModal, closeModal, confirmDialog } from '../modal.js';
+import { storeAndPriceFieldsHtml } from './porProbar.js';
 import { formatFecha, escapeHtml, toast } from '../utils.js';
 
 const content = document.getElementById('pendientes-content');
+const contentProbar = document.getElementById('pendientes-probar-content');
 const badge = document.getElementById('badge-pendientes');
 let items = [];
+let itemsProbar = [];
 
 export async function render() {
   content.innerHTML = '<p class="empty-state">Cargando…</p>';
-  items = await api.listarPendientes();
+  contentProbar.innerHTML = '<p class="empty-state">Cargando…</p>';
+  [items, itemsProbar] = await Promise.all([
+    api.listarPendientes(),
+    api.listarPendientesProbar(),
+  ]);
   updateBadge();
-  if (!items.length) {
-    content.innerHTML = '<p class="empty-state">No tienes perfumes pendientes de compra.</p>';
-    return;
-  }
-  content.innerHTML = items.map(cardHtml).join('');
+
+  content.innerHTML = items.length
+    ? items.map(cardHtml).join('')
+    : '<p class="empty-state">No tienes perfumes pendientes de compra.</p>';
+
+  contentProbar.innerHTML = itemsProbar.length
+    ? itemsProbar.map(cardHtmlProbar).join('')
+    : '<p class="empty-state">No tienes perfumes marcados como sin stock.</p>';
 }
 
 function updateBadge() {
-  if (items.length) {
-    badge.textContent = items.length;
+  const total = items.length + itemsProbar.length;
+  if (total) {
+    badge.textContent = total;
     badge.classList.remove('hidden');
   } else {
     badge.classList.add('hidden');
@@ -44,12 +55,40 @@ function cardHtml(p) {
   `;
 }
 
+function cardHtmlProbar(p) {
+  return `
+    <div class="card" data-id-probar="${p.id}">
+      <div class="card-title">${escapeHtml(p.nombre_perfume)}</div>
+      ${p.referencia ? `<div class="card-ref">Ref: ${escapeHtml(p.referencia)}</div>` : ''}
+      <div class="card-meta">
+        <span class="chip chip-warn">Sin stock (visto en ${escapeHtml(p.tienda_nombre || '—')})</span>
+        <span class="chip chip-price">${formatFecha(p.fecha)}</span>
+      </div>
+      ${p.comentario ? `<div class="card-comment">${escapeHtml(p.comentario)}</div>` : ''}
+      <div class="card-actions">
+        <button class="btn btn-success btn-sm" data-action="volvio">Ya volvió</button>
+        <button class="btn btn-danger btn-sm" data-action="eliminar-probar">Eliminar</button>
+      </div>
+    </div>
+  `;
+}
+
 content.addEventListener('click', async (e) => {
   const btn = e.target.closest('[data-action="ya-lo-compre"]');
   if (!btn) return;
   const card = e.target.closest('[data-id]');
   const item = items.find((i) => i.id === card.dataset.id);
   if (item) handleYaLoCompre(item);
+});
+
+contentProbar.addEventListener('click', async (e) => {
+  const card = e.target.closest('[data-id-probar]');
+  if (!card) return;
+  const item = itemsProbar.find((i) => i.id === card.dataset.idProbar);
+  if (!item) return;
+
+  if (e.target.closest('[data-action="volvio"]')) return handleVolvio(item);
+  if (e.target.closest('[data-action="eliminar-probar"]')) return handleEliminarProbar(item);
 });
 
 async function handleYaLoCompre(item) {
@@ -96,4 +135,60 @@ async function handleYaLoCompre(item) {
       toast('Error: ' + err.message, true);
     }
   });
+}
+
+async function handleVolvio(item) {
+  const tiendas = (await getTiendas()).filter((t) => t.activa);
+  if (!tiendas.length) {
+    toast('Primero agrega al menos una tienda activa en la pestaña Tiendas', true);
+    return;
+  }
+  const el = openModal(`
+    <h3>Volvió a aparecer — ${escapeHtml(item.nombre_perfume)}</h3>
+    <p class="import-format">Se vuelve a agregar a "Por Probar" en la tienda que elijas.</p>
+    <form id="form-volvio">
+      ${storeAndPriceFieldsHtml(tiendas, { comentario: item.comentario })}
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" data-action="cancel">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Volver a Por Probar</button>
+      </div>
+    </form>
+  `);
+  el.querySelector('[data-action="cancel"]').addEventListener('click', closeModal);
+  el.querySelector('#form-volvio').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target);
+    try {
+      await api.volverAPorProbar({
+        p_pendiente_probar_id: item.id,
+        p_tienda_id: fd.get('tienda_id'),
+        p_precio: fd.get('precio') ? Number(fd.get('precio')) : null,
+        p_comentario: fd.get('comentario') || null,
+        p_disponibilidad: fd.get('disponibilidad'),
+        p_modalidad: fd.get('modalidad'),
+      });
+      closeModal();
+      toast('De vuelta en Por Probar');
+      render();
+    } catch (err) {
+      toast('Error: ' + err.message, true);
+    }
+  });
+}
+
+async function handleEliminarProbar(item) {
+  const ok = await confirmDialog({
+    title: 'Eliminar definitivamente',
+    message: `¿Eliminar "${escapeHtml(item.nombre_perfume)}" de Pendientes por Probar? Esta acción no se puede deshacer.`,
+    confirmLabel: 'Eliminar',
+    danger: true,
+  });
+  if (!ok) return;
+  try {
+    await api.eliminarPendienteProbar(item.id);
+    toast('Eliminado');
+    render();
+  } catch (err) {
+    toast('Error: ' + err.message, true);
+  }
 }

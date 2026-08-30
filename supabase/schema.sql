@@ -70,6 +70,19 @@ create table if not exists lista_negra (
   created_at timestamptz not null default now()
 );
 
+-- Perfumes que estaban "por probar" pero resultaron sin stock en ninguna
+-- tienda al momento de ir a buscarlos; se guardan aquí para revisar más
+-- adelante si volvieron a aparecer.
+create table if not exists pendientes_probar (
+  id uuid primary key default gen_random_uuid(),
+  nombre_perfume text not null,
+  referencia text,
+  comentario text,
+  tienda_agotado_id uuid references tiendas(id),
+  fecha date not null default current_date,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists app_sessions (
   token uuid primary key default gen_random_uuid(),
   created_at timestamptz not null default now(),
@@ -94,13 +107,14 @@ alter table tiendas enable row level security;
 alter table por_probar enable row level security;
 alter table por_probar_tienda enable row level security;
 alter table pendientes_compra enable row level security;
+alter table pendientes_probar enable row level security;
 alter table coleccion enable row level security;
 alter table lista_negra enable row level security;
 alter table app_sessions enable row level security;
 alter table app_config enable row level security;
 
 revoke all on tiendas, por_probar, por_probar_tienda, pendientes_compra,
-  coleccion, lista_negra, app_sessions, app_config
+  pendientes_probar, coleccion, lista_negra, app_sessions, app_config
   from anon, authenticated;
 
 -- ---------------------------------------------------------------------
@@ -404,6 +418,39 @@ begin
 end;
 $$;
 
+-- Sin stock en ninguna tienda por ahora: saca el perfume de TODAS las
+-- tiendas donde estaba listado y lo guarda en pendientes_probar para
+-- revisar más adelante si volvió a aparecer.
+create or replace function public.marcar_agotado(p_token uuid, p_por_probar_tienda_id uuid)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_por_probar_id uuid;
+  v_tienda_id uuid;
+  v_nombre text;
+  v_referencia text;
+  v_comentario text;
+begin
+  perform check_token(p_token);
+
+  select ppt.por_probar_id, ppt.tienda_id, pp.nombre_perfume, pp.referencia, ppt.comentario
+    into v_por_probar_id, v_tienda_id, v_nombre, v_referencia, v_comentario
+  from por_probar_tienda ppt
+  join por_probar pp on pp.id = ppt.por_probar_id
+  where ppt.id = p_por_probar_tienda_id;
+
+  if v_por_probar_id is null then
+    raise exception 'No se encontró el registro';
+  end if;
+
+  insert into pendientes_probar (nombre_perfume, referencia, comentario, tienda_agotado_id, fecha)
+    values (v_nombre, v_referencia, v_comentario, v_tienda_id, current_date);
+
+  delete from por_probar where id = v_por_probar_id;
+end;
+$$;
+
 -- ---------------------------------------------------------------------
 -- 6. PENDIENTES DE COMPRA
 -- ---------------------------------------------------------------------
@@ -446,6 +493,67 @@ begin
             p_tienda_compra_id, nullif(trim(p_canal_compra), ''), p_precio, current_date);
 
   delete from pendientes_compra where id = p_pendiente_id;
+end;
+$$;
+
+create or replace function public.listar_pendientes_probar(p_token uuid)
+returns table (
+  id uuid, nombre_perfume text, referencia text, comentario text,
+  tienda_agotado_id uuid, tienda_nombre text, fecha date
+)
+language plpgsql security definer set search_path = public
+as $$
+begin
+  perform check_token(p_token);
+  return query
+    select pp.id, pp.nombre_perfume, pp.referencia, pp.comentario,
+           pp.tienda_agotado_id, t.nombre, pp.fecha
+    from pendientes_probar pp
+    left join tiendas t on t.id = pp.tienda_agotado_id
+    order by pp.fecha desc;
+end;
+$$;
+
+-- El perfume volvió a aparecer: lo reingresa a "por probar" en la tienda
+-- indicada y borra el pendiente.
+create or replace function public.volver_a_por_probar(
+  p_token uuid, p_pendiente_probar_id uuid, p_tienda_id uuid,
+  p_precio numeric, p_comentario text, p_disponibilidad text, p_modalidad text
+)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_row pendientes_probar;
+  v_id uuid;
+begin
+  perform check_token(p_token);
+  select * into v_row from pendientes_probar where id = p_pendiente_probar_id;
+  if v_row.id is null then
+    raise exception 'No se encontró el pendiente';
+  end if;
+
+  insert into por_probar (nombre_perfume, referencia)
+    values (v_row.nombre_perfume, v_row.referencia)
+    returning id into v_id;
+
+  insert into por_probar_tienda (por_probar_id, tienda_id, precio, comentario, disponibilidad, modalidad)
+    values (v_id, p_tienda_id, p_precio,
+            coalesce(nullif(p_comentario, ''), v_row.comentario),
+            coalesce(p_disponibilidad, 'con_probador'),
+            coalesce(p_modalidad, 'comprar_aqui'));
+
+  delete from pendientes_probar where id = p_pendiente_probar_id;
+end;
+$$;
+
+create or replace function public.eliminar_pendiente_probar(p_token uuid, p_pendiente_probar_id uuid)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+begin
+  perform check_token(p_token);
+  delete from pendientes_probar where id = p_pendiente_probar_id;
 end;
 $$;
 
@@ -615,8 +723,9 @@ revoke all on function
   public.listar_tiendas, public.crear_tienda, public.set_tienda_activa,
   public.listar_por_probar, public.crear_por_probar, public.agregar_tienda_a_por_probar,
   public.marcar_sin_probador, public.me_gusto, public.no_me_gusto,
-  public.editar_por_probar, public.eliminar_por_probar_tienda,
+  public.editar_por_probar, public.eliminar_por_probar_tienda, public.marcar_agotado,
   public.listar_pendientes_compra, public.ya_lo_compre,
+  public.listar_pendientes_probar, public.volver_a_por_probar, public.eliminar_pendiente_probar,
   public.listar_coleccion, public.listar_lista_negra,
   public.listar_candidatos_duplicado,
   public.importar_coleccion, public.importar_lista_negra, public.importar_por_probar
@@ -635,8 +744,12 @@ grant execute on function public.me_gusto(uuid, uuid, numeric) to anon;
 grant execute on function public.no_me_gusto(uuid, uuid, text) to anon;
 grant execute on function public.editar_por_probar(uuid, uuid, text, text, numeric, text, text, text) to anon;
 grant execute on function public.eliminar_por_probar_tienda(uuid, uuid) to anon;
+grant execute on function public.marcar_agotado(uuid, uuid) to anon;
 grant execute on function public.listar_pendientes_compra(uuid) to anon;
 grant execute on function public.ya_lo_compre(uuid, uuid, uuid, text, numeric) to anon;
+grant execute on function public.listar_pendientes_probar(uuid) to anon;
+grant execute on function public.volver_a_por_probar(uuid, uuid, uuid, numeric, text, text, text) to anon;
+grant execute on function public.eliminar_pendiente_probar(uuid, uuid) to anon;
 grant execute on function public.listar_coleccion(uuid) to anon;
 grant execute on function public.listar_lista_negra(uuid) to anon;
 grant execute on function public.listar_candidatos_duplicado(uuid) to anon;

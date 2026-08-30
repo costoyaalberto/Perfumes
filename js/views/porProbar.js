@@ -159,8 +159,11 @@ async function handleEditar(row) {
           <label><input type="radio" name="modalidad" value="solo_probar" ${row.modalidad === 'solo_probar' ? 'checked' : ''} /> Solo probar</label>
         </div>
       </div>
-      <div class="modal-actions" style="justify-content:space-between;">
-        <button type="button" class="btn btn-danger btn-sm" data-action="eliminar">Quitar de esta tienda</button>
+      <div class="modal-actions" style="justify-content:space-between; flex-wrap:wrap; gap:8px;">
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button type="button" class="btn btn-outline btn-sm" data-action="agotado">Sin stock</button>
+          <button type="button" class="btn btn-danger btn-sm" data-action="eliminar">Quitar de esta tienda</button>
+        </div>
         <div style="display:flex; gap:10px;">
           <button type="button" class="btn btn-secondary" data-action="cancel">Cancelar</button>
           <button type="submit" class="btn btn-primary">Guardar</button>
@@ -169,6 +172,22 @@ async function handleEditar(row) {
     </form>
   `);
   el.querySelector('[data-action="cancel"]').addEventListener('click', closeModal);
+  el.querySelector('[data-action="agotado"]').addEventListener('click', async () => {
+    const ok = await confirmDialog({
+      title: 'Marcar sin stock',
+      message: `"${escapeHtml(row.nombre_perfume)}" se quitará de todas las tiendas donde estaba listado y pasará a "Pendientes por Probar" para revisarlo más adelante.`,
+      confirmLabel: 'Mover a Pendientes',
+    });
+    if (!ok) return;
+    try {
+      await api.marcarAgotado(row.por_probar_tienda_id);
+      closeModal();
+      toast('Movido a Pendientes por Probar');
+      render();
+    } catch (err) {
+      toast('Error: ' + err.message, true);
+    }
+  });
   el.querySelector('[data-action="eliminar"]').addEventListener('click', async () => {
     const ok = await confirmDialog({
       title: 'Quitar de esta tienda',
@@ -344,7 +363,7 @@ async function handleAgregarTienda(row) {
   });
 }
 
-function storeAndPriceFieldsHtml(tiendas, selected = {}) {
+export function storeAndPriceFieldsHtml(tiendas, selected = {}) {
   const sel = {
     tienda_id: selected.tienda_id || '',
     precio: selected.precio ?? '',

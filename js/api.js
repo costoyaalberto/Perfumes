@@ -56,9 +56,14 @@ export const api = {
   noMeGusto: (p_por_probar_tienda_id, p_motivo) => rpc('no_me_gusto', { p_por_probar_tienda_id, p_motivo }),
   editarPorProbar: (args) => rpc('editar_por_probar', args),
   eliminarPorProbarTienda: (p_por_probar_tienda_id) => rpc('eliminar_por_probar_tienda', { p_por_probar_tienda_id }),
+  marcarAgotado: (p_por_probar_tienda_id) => rpc('marcar_agotado', { p_por_probar_tienda_id }),
 
   listarPendientes: () => rpc('listar_pendientes_compra'),
   yaLoCompre: (args) => rpc('ya_lo_compre', args),
+
+  listarPendientesProbar: () => rpc('listar_pendientes_probar'),
+  volverAPorProbar: (args) => rpc('volver_a_por_probar', args),
+  eliminarPendienteProbar: (p_pendiente_probar_id) => rpc('eliminar_pendiente_probar', { p_pendiente_probar_id }),
 
   listarColeccion: () => rpc('listar_coleccion'),
   listarListaNegra: () => rpc('listar_lista_negra'),
