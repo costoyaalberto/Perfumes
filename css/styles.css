@@ -77,6 +77,15 @@ html, body {
   z-index: 10;
 }
 .topbar h1 { margin: 0; font-size: 1.2rem; }
+.topbar-right { display: flex; align-items: center; gap: 10px; }
+.version-tag {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: rgba(255,255,255,0.75);
+  background: rgba(255,255,255,0.15);
+  border-radius: 10px;
+  padding: 2px 8px;
+}
 .btn-icon {
   background: rgba(255,255,255,0.15);
   border: none;
@@ -154,7 +163,8 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   background: none;
   border: none;
   padding: 10px 2px;
-  font-size: 0.8rem;
+  font-size: 0.95rem;
+  font-weight: 600;
   line-height: 1.15;
   color: var(--muted);
   cursor: pointer;
@@ -176,7 +186,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 /* ---------- Content / groups / cards ---------- */
 .store-group { margin-bottom: 22px; }
 .store-group h3 {
-  font-size: 1rem;
+  font-size: 1.35rem;
   color: var(--violet-dark);
   border-bottom: 2px solid var(--cream);
   padding-bottom: 6px;
