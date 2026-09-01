@@ -83,6 +83,17 @@ create table if not exists pendientes_probar (
   created_at timestamptz not null default now()
 );
 
+-- Snapshot de un perfume justo antes de moverlo a coleccion / lista_negra /
+-- pendientes_compra, para poder deshacer el movimiento dentro de 48h.
+create table if not exists historial_movimientos (
+  id uuid primary key default gen_random_uuid(),
+  tipo text not null check (tipo in ('rechazo', 'compra', 'pendiente_compra')),
+  snapshot jsonb not null,
+  destino_id uuid not null,
+  creado_en timestamptz not null default now(),
+  revertido boolean not null default false
+);
+
 create table if not exists app_sessions (
   token uuid primary key default gen_random_uuid(),
   created_at timestamptz not null default now(),
@@ -94,6 +105,14 @@ create table if not exists app_config (
   pin_hash text not null,
   constraint single_row check (id = 1)
 );
+
+-- ---------------------------------------------------------------------
+-- 1b. MIGRACIONES INCREMENTALES sobre tablas que ya existían en producción
+--     (create table if not exists no las toca; se agregan con alter table,
+--     también idempotente).
+-- ---------------------------------------------------------------------
+
+alter table por_probar add column if not exists destacado boolean not null default false;
 
 -- ---------------------------------------------------------------------
 -- 2. BLOQUEO DE ACCESO DIRECTO
@@ -110,11 +129,13 @@ alter table pendientes_compra enable row level security;
 alter table pendientes_probar enable row level security;
 alter table coleccion enable row level security;
 alter table lista_negra enable row level security;
+alter table historial_movimientos enable row level security;
 alter table app_sessions enable row level security;
 alter table app_config enable row level security;
 
 revoke all on tiendas, por_probar, por_probar_tienda, pendientes_compra,
-  pendientes_probar, coleccion, lista_negra, app_sessions, app_config
+  pendientes_probar, coleccion, lista_negra, historial_movimientos,
+  app_sessions, app_config
   from anon, authenticated;
 
 -- ---------------------------------------------------------------------
@@ -212,11 +233,15 @@ $$;
 -- 5. POR PROBAR
 -- ---------------------------------------------------------------------
 
+-- drop porque cambia la forma de la tabla retornada (se agregó "destacado")
+-- y create or replace no permite eso.
+drop function if exists public.listar_por_probar(uuid);
 create or replace function public.listar_por_probar(p_token uuid)
 returns table (
   por_probar_id uuid,
   nombre_perfume text,
   referencia text,
+  destacado boolean,
   por_probar_tienda_id uuid,
   tienda_id uuid,
   tienda_nombre text,
@@ -231,7 +256,7 @@ as $$
 begin
   perform check_token(p_token);
   return query
-    select pp.id, pp.nombre_perfume, pp.referencia,
+    select pp.id, pp.nombre_perfume, pp.referencia, pp.destacado,
            ppt.id, ppt.tienda_id, t.nombre,
            ppt.precio, ppt.comentario, ppt.disponibilidad, ppt.modalidad,
            ppt.created_at
@@ -239,6 +264,60 @@ begin
     join por_probar pp on pp.id = ppt.por_probar_id
     join tiendas t on t.id = ppt.tienda_id
     order by t.nombre, pp.nombre_perfume;
+end;
+$$;
+
+create or replace function public.toggle_destacado(p_token uuid, p_por_probar_id uuid, p_destacado boolean)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+begin
+  perform check_token(p_token);
+  update por_probar set destacado = p_destacado where id = p_por_probar_id;
+end;
+$$;
+
+-- Cambia la tienda de una fila puntual cuando el usuario SABE dónde
+-- reapareció el perfume (a diferencia de "Sin stock", que es para cuando
+-- no sabe dónde está). Mantiene precio/comentario/modalidad; resetea
+-- disponibilidad porque se asume que hay stock en la tienda nueva.
+create or replace function public.cambiar_tienda_por_probar(p_token uuid, p_por_probar_tienda_id uuid, p_tienda_id uuid)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_por_probar_id uuid;
+begin
+  perform check_token(p_token);
+  select por_probar_id into v_por_probar_id from por_probar_tienda where id = p_por_probar_tienda_id;
+  if v_por_probar_id is null then
+    raise exception 'No se encontró el registro';
+  end if;
+
+  if exists (
+    select 1 from por_probar_tienda
+    where por_probar_id = v_por_probar_id and tienda_id = p_tienda_id and id <> p_por_probar_tienda_id
+  ) then
+    raise exception 'Este perfume ya está listado en la tienda elegida';
+  end if;
+
+  update por_probar_tienda
+    set tienda_id = p_tienda_id, disponibilidad = 'con_probador'
+    where id = p_por_probar_tienda_id;
+end;
+$$;
+
+create or replace function public.obtener_contadores(p_token uuid)
+returns table (por_probar_count int, coleccion_count int, lista_negra_count int)
+language plpgsql security definer set search_path = public
+as $$
+begin
+  perform check_token(p_token);
+  return query
+    select
+      (select count(*)::int from por_probar),
+      (select count(*)::int from coleccion),
+      (select count(*)::int from lista_negra);
 end;
 $$;
 
@@ -292,10 +371,34 @@ begin
 end;
 $$;
 
+-- Arma el snapshot de un perfume (fila por_probar + TODAS sus filas de
+-- por_probar_tienda, no solo la que gatilló la acción) para historial_movimientos.
+create or replace function public.armar_snapshot_por_probar(p_por_probar_id uuid)
+returns jsonb
+language sql security definer set search_path = public
+as $$
+  select jsonb_build_object(
+    'por_probar', (
+      select jsonb_build_object('nombre_perfume', pp.nombre_perfume, 'referencia', pp.referencia, 'destacado', pp.destacado)
+      from por_probar pp where pp.id = p_por_probar_id
+    ),
+    'tiendas', (
+      select coalesce(jsonb_agg(jsonb_build_object(
+        'tienda_id', ppt.tienda_id, 'precio', ppt.precio, 'comentario', ppt.comentario,
+        'disponibilidad', ppt.disponibilidad, 'modalidad', ppt.modalidad
+      )), '[]'::jsonb)
+      from por_probar_tienda ppt where ppt.por_probar_id = p_por_probar_id
+    )
+  );
+$$;
+
 -- "Me gustó": mueve el perfume completo (todas sus tiendas) a Colección o
--- a Pendientes de Compra según la modalidad de la tarjeta que gatilló la acción.
+-- a Pendientes de Compra según la modalidad de la tarjeta que gatilló la
+-- acción. Guarda un snapshot en historial_movimientos y retorna su id para
+-- que el frontend pueda ofrecer "Deshacer".
+drop function if exists public.me_gusto(uuid, uuid, numeric);
 create or replace function public.me_gusto(p_token uuid, p_por_probar_tienda_id uuid, p_precio_final numeric)
-returns void
+returns uuid
 language plpgsql security definer set search_path = public
 as $$
 declare
@@ -305,6 +408,9 @@ declare
   v_nombre text;
   v_referencia text;
   v_comentario text;
+  v_destino_id uuid;
+  v_historial_id uuid;
+  v_snapshot jsonb;
 begin
   perform check_token(p_token);
 
@@ -318,20 +424,30 @@ begin
     raise exception 'No se encontró el registro';
   end if;
 
+  v_snapshot := armar_snapshot_por_probar(v_por_probar_id);
+
   if v_modalidad = 'comprar_aqui' then
     insert into coleccion (nombre_perfume, referencia, comentario, tienda_compra_id, precio, fecha_compra)
-      values (v_nombre, v_referencia, v_comentario, v_tienda_id, p_precio_final, current_date);
+      values (v_nombre, v_referencia, v_comentario, v_tienda_id, p_precio_final, current_date)
+      returning id into v_destino_id;
+    insert into historial_movimientos (tipo, snapshot, destino_id)
+      values ('compra', v_snapshot, v_destino_id) returning id into v_historial_id;
   else
     insert into pendientes_compra (nombre_perfume, referencia, comentario, tienda_probada_id, fecha_prueba)
-      values (v_nombre, v_referencia, v_comentario, v_tienda_id, current_date);
+      values (v_nombre, v_referencia, v_comentario, v_tienda_id, current_date)
+      returning id into v_destino_id;
+    insert into historial_movimientos (tipo, snapshot, destino_id)
+      values ('pendiente_compra', v_snapshot, v_destino_id) returning id into v_historial_id;
   end if;
 
   delete from por_probar where id = v_por_probar_id;
+  return v_historial_id;
 end;
 $$;
 
+drop function if exists public.no_me_gusto(uuid, uuid, text);
 create or replace function public.no_me_gusto(p_token uuid, p_por_probar_tienda_id uuid, p_motivo text)
-returns void
+returns uuid
 language plpgsql security definer set search_path = public
 as $$
 declare
@@ -339,6 +455,9 @@ declare
   v_tienda_id uuid;
   v_nombre text;
   v_comentario text;
+  v_destino_id uuid;
+  v_historial_id uuid;
+  v_snapshot jsonb;
 begin
   perform check_token(p_token);
 
@@ -356,10 +475,92 @@ begin
     raise exception 'El motivo es obligatorio';
   end if;
 
+  v_snapshot := armar_snapshot_por_probar(v_por_probar_id);
+
   insert into lista_negra (nombre_perfume, motivo, tienda_probada_id, comentario, fecha)
-    values (v_nombre, trim(p_motivo), v_tienda_id, v_comentario, current_date);
+    values (v_nombre, trim(p_motivo), v_tienda_id, v_comentario, current_date)
+    returning id into v_destino_id;
+
+  insert into historial_movimientos (tipo, snapshot, destino_id)
+    values ('rechazo', v_snapshot, v_destino_id) returning id into v_historial_id;
 
   delete from por_probar where id = v_por_probar_id;
+  return v_historial_id;
+end;
+$$;
+
+-- Deshace un me_gusto/no_me_gusto dentro de las 48h siguientes: recrea el
+-- perfume en por_probar/por_probar_tienda desde el snapshot y borra la
+-- fila que se había creado en coleccion/lista_negra/pendientes_compra.
+create or replace function public.deshacer_movimiento(p_token uuid, p_historial_id uuid)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_hist historial_movimientos;
+  v_snapshot jsonb;
+  v_tienda jsonb;
+  v_new_id uuid;
+begin
+  perform check_token(p_token);
+
+  select * into v_hist from historial_movimientos where id = p_historial_id;
+  if v_hist.id is null then
+    raise exception 'No se encontró el movimiento';
+  end if;
+  if v_hist.revertido then
+    raise exception 'Este movimiento ya fue revertido';
+  end if;
+  if v_hist.creado_en < now() - interval '48 hours' then
+    raise exception 'Ya pasaron más de 48 horas, no se puede deshacer';
+  end if;
+
+  v_snapshot := v_hist.snapshot;
+
+  insert into por_probar (nombre_perfume, referencia, destacado)
+    values (
+      v_snapshot->'por_probar'->>'nombre_perfume',
+      nullif(v_snapshot->'por_probar'->>'referencia', ''),
+      coalesce((v_snapshot->'por_probar'->>'destacado')::boolean, false)
+    )
+    returning id into v_new_id;
+
+  for v_tienda in select * from jsonb_array_elements(v_snapshot->'tiendas') loop
+    insert into por_probar_tienda (por_probar_id, tienda_id, precio, comentario, disponibilidad, modalidad)
+      values (
+        v_new_id,
+        (v_tienda->>'tienda_id')::uuid,
+        nullif(v_tienda->>'precio', '')::numeric,
+        nullif(v_tienda->>'comentario', ''),
+        coalesce(nullif(v_tienda->>'disponibilidad', ''), 'con_probador'),
+        coalesce(nullif(v_tienda->>'modalidad', ''), 'comprar_aqui')
+      );
+  end loop;
+
+  if v_hist.tipo = 'rechazo' then
+    delete from lista_negra where id = v_hist.destino_id;
+  elsif v_hist.tipo = 'compra' then
+    delete from coleccion where id = v_hist.destino_id;
+  elsif v_hist.tipo = 'pendiente_compra' then
+    delete from pendientes_compra where id = v_hist.destino_id;
+  end if;
+
+  update historial_movimientos set revertido = true where id = p_historial_id;
+end;
+$$;
+
+create or replace function public.listar_movimientos_recientes(p_token uuid)
+returns table (id uuid, tipo text, nombre_perfume text, creado_en timestamptz)
+language plpgsql security definer set search_path = public
+as $$
+begin
+  perform check_token(p_token);
+  return query
+    select hm.id, hm.tipo, hm.snapshot->'por_probar'->>'nombre_perfume', hm.creado_en
+    from historial_movimientos hm
+    where hm.revertido = false
+      and hm.creado_en > now() - interval '48 hours'
+    order by hm.creado_en desc;
 end;
 $$;
 
@@ -631,6 +832,72 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------
+-- 8b. EXPORTAR / BACKUP
+-- ---------------------------------------------------------------------
+
+create or replace function public.exportar_datos(p_token uuid)
+returns jsonb
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_result jsonb;
+begin
+  perform check_token(p_token);
+  select jsonb_build_object(
+    'generado_en', now(),
+    'tiendas', (
+      select coalesce(jsonb_agg(row_to_json(t) order by t.nombre), '[]'::jsonb)
+      from tiendas t
+    ),
+    'por_probar', (
+      select coalesce(jsonb_agg(row_to_json(x) order by x.nombre_perfume, x.tienda_nombre), '[]'::jsonb)
+      from (
+        select pp.id as por_probar_id, pp.nombre_perfume, pp.referencia, pp.destacado,
+               ppt.id as por_probar_tienda_id, ppt.tienda_id, t.nombre as tienda_nombre,
+               ppt.precio, ppt.comentario, ppt.disponibilidad, ppt.modalidad
+        from por_probar pp
+        join por_probar_tienda ppt on ppt.por_probar_id = pp.id
+        join tiendas t on t.id = ppt.tienda_id
+      ) x
+    ),
+    'pendientes_compra', (
+      select coalesce(jsonb_agg(row_to_json(x) order by x.fecha_prueba desc), '[]'::jsonb)
+      from (
+        select pc.id, pc.nombre_perfume, pc.referencia, pc.comentario, pc.fecha_prueba,
+               t.nombre as tienda_nombre
+        from pendientes_compra pc left join tiendas t on t.id = pc.tienda_probada_id
+      ) x
+    ),
+    'pendientes_probar', (
+      select coalesce(jsonb_agg(row_to_json(x) order by x.fecha desc), '[]'::jsonb)
+      from (
+        select pp.id, pp.nombre_perfume, pp.referencia, pp.comentario, pp.fecha,
+               t.nombre as tienda_nombre
+        from pendientes_probar pp left join tiendas t on t.id = pp.tienda_agotado_id
+      ) x
+    ),
+    'coleccion', (
+      select coalesce(jsonb_agg(row_to_json(x) order by x.nombre_perfume), '[]'::jsonb)
+      from (
+        select c.id, c.nombre_perfume, c.referencia, c.comentario, c.canal_compra,
+               c.precio, c.fecha_compra, t.nombre as tienda_nombre
+        from coleccion c left join tiendas t on t.id = c.tienda_compra_id
+      ) x
+    ),
+    'lista_negra', (
+      select coalesce(jsonb_agg(row_to_json(x) order by x.nombre_perfume), '[]'::jsonb)
+      from (
+        select ln.id, ln.nombre_perfume, ln.motivo, ln.comentario, ln.fecha,
+               t.nombre as tienda_nombre
+        from lista_negra ln left join tiendas t on t.id = ln.tienda_probada_id
+      ) x
+    )
+  ) into v_result;
+  return v_result;
+end;
+$$;
+
+-- ---------------------------------------------------------------------
 -- 9. IMPORTACIÓN MASIVA
 --    Cada función recibe un jsonb array de objetos ya armados por el
 --    frontend (que resuelve nombres de tienda a id llamando listar_tiendas).
@@ -724,10 +991,12 @@ revoke all on function
   public.listar_por_probar, public.crear_por_probar, public.agregar_tienda_a_por_probar,
   public.marcar_sin_probador, public.me_gusto, public.no_me_gusto,
   public.editar_por_probar, public.eliminar_por_probar_tienda, public.marcar_agotado,
+  public.toggle_destacado, public.cambiar_tienda_por_probar, public.obtener_contadores,
+  public.armar_snapshot_por_probar, public.deshacer_movimiento, public.listar_movimientos_recientes,
   public.listar_pendientes_compra, public.ya_lo_compre,
   public.listar_pendientes_probar, public.volver_a_por_probar, public.eliminar_pendiente_probar,
   public.listar_coleccion, public.listar_lista_negra,
-  public.listar_candidatos_duplicado,
+  public.listar_candidatos_duplicado, public.exportar_datos,
   public.importar_coleccion, public.importar_lista_negra, public.importar_por_probar
   from public;
 
@@ -745,6 +1014,12 @@ grant execute on function public.no_me_gusto(uuid, uuid, text) to anon;
 grant execute on function public.editar_por_probar(uuid, uuid, text, text, numeric, text, text, text) to anon;
 grant execute on function public.eliminar_por_probar_tienda(uuid, uuid) to anon;
 grant execute on function public.marcar_agotado(uuid, uuid) to anon;
+grant execute on function public.toggle_destacado(uuid, uuid, boolean) to anon;
+grant execute on function public.cambiar_tienda_por_probar(uuid, uuid, uuid) to anon;
+grant execute on function public.obtener_contadores(uuid) to anon;
+grant execute on function public.deshacer_movimiento(uuid, uuid) to anon;
+grant execute on function public.listar_movimientos_recientes(uuid) to anon;
+grant execute on function public.exportar_datos(uuid) to anon;
 grant execute on function public.listar_pendientes_compra(uuid) to anon;
 grant execute on function public.ya_lo_compre(uuid, uuid, uuid, text, numeric) to anon;
 grant execute on function public.listar_pendientes_probar(uuid) to anon;
@@ -757,8 +1032,10 @@ grant execute on function public.importar_coleccion(uuid, jsonb) to anon;
 grant execute on function public.importar_lista_negra(uuid, jsonb) to anon;
 grant execute on function public.importar_por_probar(uuid, jsonb) to anon;
 
--- check_token se llama solo internamente desde otras funciones security
--- definer; no necesita ejecutarse desde el cliente.
+-- check_token y armar_snapshot_por_probar se llaman solo internamente
+-- desde otras funciones security definer; no necesitan ejecutarse desde
+-- el cliente (armar_snapshot_por_probar ni siquiera valida token, así
+-- que es importante que quede sin grant a anon).
 
 -- =====================================================================
 -- Fin del schema. Después de ejecutar este script, define tu PIN

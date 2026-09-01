@@ -350,3 +350,77 @@ textarea.import-textarea { min-height: 140px; font-family: ui-monospace, monospa
 }
 input:checked + .slider { background-color: var(--green); }
 input:checked + .slider:before { transform: translateX(18px); }
+
+/* ---------- Contadores (stats) ---------- */
+.stats-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.stat-tile {
+  flex: 1;
+  background: var(--card-bg);
+  border-radius: var(--radius);
+  padding: 10px 6px;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+.stat-num {
+  display: block;
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--violet);
+  line-height: 1.2;
+}
+.stat-label {
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+/* ---------- Destacados (estrella) ---------- */
+.card-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+.star-btn {
+  background: none;
+  border: none;
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 0 2px;
+  flex-shrink: 0;
+}
+.star-btn.active { color: #e0a72b; }
+
+/* ---------- Toast con acción (deshacer) ---------- */
+.toast .toast-action {
+  margin-left: 10px;
+  background: white;
+  color: var(--text);
+  border: none;
+  border-radius: 14px;
+  padding: 3px 10px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* ---------- Movimientos recientes ---------- */
+.movimiento-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--card-bg);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  box-shadow: var(--shadow);
+}
+.movimiento-info { display: flex; flex-direction: column; gap: 2px; }
+.movimiento-nombre { font-weight: 600; }
+.movimiento-meta { font-size: 0.75rem; color: var(--muted); }

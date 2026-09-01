@@ -83,9 +83,25 @@ export function parseDelimitado(texto, minCampos) {
 let toastTimer;
 export function toast(msg, isError = false) {
   const el = document.getElementById('toast');
+  el.innerHTML = '';
   el.textContent = msg;
   el.classList.remove('hidden', 'error');
   if (isError) el.classList.add('error');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.add('hidden'), 3200);
+}
+
+// Toast con un botón de acción (ej. "Deshacer"), visible más tiempo que el normal.
+export function toastConAccion(msg, accionLabel, onAccion, duracionMs = 9000) {
+  const el = document.getElementById('toast');
+  el.classList.remove('error');
+  el.innerHTML = `<span>${escapeHtml(msg)}</span> <button type="button" class="toast-action">${escapeHtml(accionLabel)}</button>`;
+  el.classList.remove('hidden');
+  clearTimeout(toastTimer);
+  const hide = () => el.classList.add('hidden');
+  el.querySelector('.toast-action').addEventListener('click', () => {
+    hide();
+    onAccion();
+  });
+  toastTimer = setTimeout(hide, duracionMs);
 }

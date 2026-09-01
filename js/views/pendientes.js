@@ -6,16 +6,26 @@ import { formatFecha, escapeHtml, toast } from '../utils.js';
 
 const content = document.getElementById('pendientes-content');
 const contentProbar = document.getElementById('pendientes-probar-content');
+const contentMovimientos = document.getElementById('movimientos-content');
 const badge = document.getElementById('badge-pendientes');
 let items = [];
 let itemsProbar = [];
+let movimientos = [];
+
+const TIPO_LABEL = {
+  rechazo: 'Lista Negra',
+  compra: 'Colección',
+  pendiente_compra: 'Pendientes de Compra',
+};
 
 export async function render() {
   content.innerHTML = '<p class="empty-state">Cargando…</p>';
   contentProbar.innerHTML = '<p class="empty-state">Cargando…</p>';
-  [items, itemsProbar] = await Promise.all([
+  contentMovimientos.innerHTML = '<p class="empty-state">Cargando…</p>';
+  [items, itemsProbar, movimientos] = await Promise.all([
     api.listarPendientes(),
     api.listarPendientesProbar(),
+    api.listarMovimientosRecientes(),
   ]);
   updateBadge();
 
@@ -26,7 +36,36 @@ export async function render() {
   contentProbar.innerHTML = itemsProbar.length
     ? itemsProbar.map(cardHtmlProbar).join('')
     : '<p class="empty-state">No tienes perfumes marcados como sin stock.</p>';
+
+  contentMovimientos.innerHTML = movimientos.length
+    ? movimientos.map(movimientoHtml).join('')
+    : '<p class="empty-state">Sin movimientos en las últimas 48 horas.</p>';
 }
+
+function movimientoHtml(m) {
+  return `
+    <div class="movimiento-row" data-id-movimiento="${m.id}">
+      <div class="movimiento-info">
+        <span class="movimiento-nombre">${escapeHtml(m.nombre_perfume || '—')}</span>
+        <span class="movimiento-meta">Movido a ${escapeHtml(TIPO_LABEL[m.tipo] || m.tipo)} · ${formatFecha(m.creado_en)}</span>
+      </div>
+      <button class="btn btn-outline btn-sm" data-action="deshacer-movimiento">Deshacer</button>
+    </div>
+  `;
+}
+
+contentMovimientos.addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-action="deshacer-movimiento"]');
+  if (!btn) return;
+  const row = e.target.closest('[data-id-movimiento]');
+  try {
+    await api.deshacerMovimiento(row.dataset.idMovimiento);
+    toast('Movimiento deshecho');
+    render();
+  } catch (err) {
+    toast('Error: ' + err.message, true);
+  }
+});
 
 function updateBadge() {
   const total = items.length + itemsProbar.length;

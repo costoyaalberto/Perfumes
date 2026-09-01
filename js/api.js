@@ -57,6 +57,9 @@ export const api = {
   editarPorProbar: (args) => rpc('editar_por_probar', args),
   eliminarPorProbarTienda: (p_por_probar_tienda_id) => rpc('eliminar_por_probar_tienda', { p_por_probar_tienda_id }),
   marcarAgotado: (p_por_probar_tienda_id) => rpc('marcar_agotado', { p_por_probar_tienda_id }),
+  toggleDestacado: (p_por_probar_id, p_destacado) => rpc('toggle_destacado', { p_por_probar_id, p_destacado }),
+  cambiarTienda: (args) => rpc('cambiar_tienda_por_probar', args),
+  obtenerContadores: () => rpc('obtener_contadores'),
 
   listarPendientes: () => rpc('listar_pendientes_compra'),
   yaLoCompre: (args) => rpc('ya_lo_compre', args),
@@ -65,10 +68,15 @@ export const api = {
   volverAPorProbar: (args) => rpc('volver_a_por_probar', args),
   eliminarPendienteProbar: (p_pendiente_probar_id) => rpc('eliminar_pendiente_probar', { p_pendiente_probar_id }),
 
+  deshacerMovimiento: (p_historial_id) => rpc('deshacer_movimiento', { p_historial_id }),
+  listarMovimientosRecientes: () => rpc('listar_movimientos_recientes'),
+
   listarColeccion: () => rpc('listar_coleccion'),
   listarListaNegra: () => rpc('listar_lista_negra'),
 
   listarCandidatosDuplicado: () => rpc('listar_candidatos_duplicado'),
+
+  exportarDatos: () => rpc('exportar_datos'),
 
   importarColeccion: (p_items) => rpc('importar_coleccion', { p_items }),
   importarListaNegra: (p_items) => rpc('importar_lista_negra', { p_items }),

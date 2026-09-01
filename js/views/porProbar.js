@@ -2,21 +2,35 @@ import { api } from '../api.js';
 import { getTiendas } from '../store.js';
 import { openModal, closeModal, confirmDialog } from '../modal.js';
 import { buscarCoincidencias, renderCoincidenciasHtml } from '../duplicados.js';
-import { formatCLP, escapeHtml, normalizarNombre, toast } from '../utils.js';
+import { formatCLP, escapeHtml, normalizarNombre, toast, toastConAccion } from '../utils.js';
 
 const content = document.getElementById('por-probar-content');
 const searchInput = document.getElementById('buscar-por-probar');
 const btnFiltroSinProbador = document.getElementById('btn-filtro-sin-probador');
+const btnFiltroDestacado = document.getElementById('btn-filtro-destacado');
 
 let rows = [];
 const collapsedTiendas = new Set();
 let searchQuery = '';
 let onlySinProbador = false;
+let onlyDestacado = false;
 
 export async function render() {
   content.innerHTML = '<p class="empty-state">Cargando…</p>';
-  rows = await api.listarPorProbar();
+  const [rowsResult, contadores] = await Promise.all([
+    api.listarPorProbar(),
+    api.obtenerContadores(),
+  ]);
+  rows = rowsResult;
+  actualizarContadores(contadores);
   draw();
+}
+
+function actualizarContadores(contadores) {
+  const c = (contadores && contadores[0]) || {};
+  document.getElementById('stat-por-probar').textContent = c.por_probar_count ?? '—';
+  document.getElementById('stat-coleccion').textContent = c.coleccion_count ?? '—';
+  document.getElementById('stat-lista-negra').textContent = c.lista_negra_count ?? '—';
 }
 
 function draw() {
@@ -27,6 +41,7 @@ function draw() {
   const q = normalizarNombre(searchQuery);
   let filtered = rows;
   if (onlySinProbador) filtered = filtered.filter((r) => r.disponibilidad === 'sin_probador');
+  if (onlyDestacado) filtered = filtered.filter((r) => r.destacado);
   if (q) filtered = filtered.filter((r) => normalizarNombre(r.nombre_perfume).includes(q));
 
   if (!filtered.length) {
@@ -63,7 +78,10 @@ function cardHtml(r) {
     : '<span class="chip chip-try">Solo probar</span>';
   return `
     <div class="card card-clickable" data-ppt-id="${r.por_probar_tienda_id}">
-      <div class="card-title">${escapeHtml(r.nombre_perfume)}</div>
+      <div class="card-title-row">
+        <div class="card-title">${escapeHtml(r.nombre_perfume)}</div>
+        <button type="button" class="star-btn ${r.destacado ? 'active' : ''}" data-action="destacado" title="Destacar">${r.destacado ? '★' : '☆'}</button>
+      </div>
       ${r.referencia ? `<div class="card-ref">Ref: ${escapeHtml(r.referencia)}</div>` : ''}
       <div class="card-meta">
         <span class="chip chip-price">${formatCLP(r.precio)}</span>
@@ -96,6 +114,12 @@ btnFiltroSinProbador.addEventListener('click', () => {
   draw();
 });
 
+btnFiltroDestacado.addEventListener('click', () => {
+  onlyDestacado = !onlyDestacado;
+  btnFiltroDestacado.classList.toggle('active', onlyDestacado);
+  draw();
+});
+
 content.addEventListener('click', async (e) => {
   const h3 = e.target.closest('.store-group h3');
   if (h3) {
@@ -118,11 +142,21 @@ content.addEventListener('click', async (e) => {
     if (btn.dataset.action === 'no-me-gusto') return handleNoMeGusto(row);
     if (btn.dataset.action === 'sin-probador') return handleSinProbador(row);
     if (btn.dataset.action === 'agregar-tienda') return handleAgregarTienda(row);
+    if (btn.dataset.action === 'destacado') return handleToggleDestacado(row);
     return;
   }
 
   handleEditar(row);
 });
+
+async function handleToggleDestacado(row) {
+  try {
+    await api.toggleDestacado(row.por_probar_id, !row.destacado);
+    render();
+  } catch (err) {
+    toast('Error: ' + err.message, true);
+  }
+}
 
 async function handleEditar(row) {
   const el = openModal(`
@@ -161,6 +195,7 @@ async function handleEditar(row) {
       </div>
       <div class="modal-actions" style="justify-content:space-between; flex-wrap:wrap; gap:8px;">
         <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button type="button" class="btn btn-outline btn-sm" data-action="cambiar-tienda">Cambiar tienda</button>
           <button type="button" class="btn btn-outline btn-sm" data-action="agotado">Sin stock</button>
           <button type="button" class="btn btn-danger btn-sm" data-action="eliminar">Quitar de esta tienda</button>
         </div>
@@ -172,6 +207,7 @@ async function handleEditar(row) {
     </form>
   `);
   el.querySelector('[data-action="cancel"]').addEventListener('click', closeModal);
+  el.querySelector('[data-action="cambiar-tienda"]').addEventListener('click', () => handleCambiarTienda(row));
   el.querySelector('[data-action="agotado"]').addEventListener('click', async () => {
     const ok = await confirmDialog({
       title: 'Marcar sin stock',
@@ -227,6 +263,50 @@ async function handleEditar(row) {
   });
 }
 
+// Para cuando el usuario SABE dónde reapareció el perfume (a diferencia de
+// "Sin stock", que es para cuando no sabe y hay que ir a buscarlo).
+async function handleCambiarTienda(row) {
+  const todasTiendas = await getTiendas();
+  const yaListadas = new Set(rows.filter((r) => r.por_probar_id === row.por_probar_id).map((r) => r.tienda_id));
+  const disponibles = todasTiendas.filter((t) => t.activa && !yaListadas.has(t.id));
+  if (!disponibles.length) {
+    toast('No hay otra tienda activa disponible para mover este perfume', true);
+    return;
+  }
+  const el = openModal(`
+    <h3>Cambiar tienda — ${escapeHtml(row.nombre_perfume)}</h3>
+    <p class="import-format">Se mantiene el precio, comentario y modalidad; la disponibilidad vuelve a "con probador".</p>
+    <form id="form-cambiar-tienda">
+      <div class="form-row">
+        <label>Nueva tienda</label>
+        <select name="tienda_id" required>
+          ${disponibles.map((t) => `<option value="${t.id}">${escapeHtml(t.nombre)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" data-action="cancel">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Cambiar</button>
+      </div>
+    </form>
+  `);
+  el.querySelector('[data-action="cancel"]').addEventListener('click', closeModal);
+  el.querySelector('#form-cambiar-tienda').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target);
+    try {
+      await api.cambiarTienda({
+        p_por_probar_tienda_id: row.por_probar_tienda_id,
+        p_tienda_id: fd.get('tienda_id'),
+      });
+      closeModal();
+      toast('Tienda cambiada');
+      render();
+    } catch (err) {
+      toast('Error: ' + err.message, true);
+    }
+  });
+}
+
 async function handleSinProbador(row) {
   const ok = await confirmDialog({
     title: 'Marcar sin probador',
@@ -270,9 +350,9 @@ async function handleMeGusto(row) {
       ev.preventDefault();
       const precio = Number(new FormData(ev.target).get('precio'));
       try {
-        await api.meGusto(row.por_probar_tienda_id, precio);
+        const historialId = await api.meGusto(row.por_probar_tienda_id, precio);
         closeModal();
-        toast('Movido a Colección 🎉');
+        avisarConDeshacer('Movido a Colección 🎉', historialId);
         render();
       } catch (err) {
         toast('Error: ' + err.message, true);
@@ -281,15 +361,31 @@ async function handleMeGusto(row) {
   } else {
     el.querySelector('[data-action="confirmar"]').addEventListener('click', async () => {
       try {
-        await api.meGusto(row.por_probar_tienda_id, null);
+        const historialId = await api.meGusto(row.por_probar_tienda_id, null);
         closeModal();
-        toast('Movido a Pendientes de Compra');
+        avisarConDeshacer('Movido a Pendientes de Compra', historialId);
         render();
       } catch (err) {
         toast('Error: ' + err.message, true);
       }
     });
   }
+}
+
+function avisarConDeshacer(mensaje, historialId) {
+  if (!historialId) {
+    toast(mensaje);
+    return;
+  }
+  toastConAccion(mensaje, 'Deshacer', async () => {
+    try {
+      await api.deshacerMovimiento(historialId);
+      toast('Movimiento deshecho');
+      render();
+    } catch (err) {
+      toast('Error: ' + err.message, true);
+    }
+  });
 }
 
 async function handleNoMeGusto(row) {
@@ -313,9 +409,9 @@ async function handleNoMeGusto(row) {
     const motivo = new FormData(ev.target).get('motivo').trim();
     if (!motivo) return;
     try {
-      await api.noMeGusto(row.por_probar_tienda_id, motivo);
+      const historialId = await api.noMeGusto(row.por_probar_tienda_id, motivo);
       closeModal();
-      toast('Movido a Lista Negra');
+      avisarConDeshacer('Movido a Lista Negra', historialId);
       render();
     } catch (err) {
       toast('Error: ' + err.message, true);
