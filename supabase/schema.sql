@@ -759,7 +759,10 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------
--- 7. COLECCIÓN / LISTA NEGRA (solo lectura desde la app)
+-- 7. COLECCIÓN / LISTA NEGRA
+--    Mayormente de solo lectura desde la app, salvo eliminar_de_coleccion
+--    (para devoluciones: producto roto/defectuoso, etc, pasadas las 48h
+--    en que ya no sirve "Deshacer").
 -- ---------------------------------------------------------------------
 
 create or replace function public.listar_coleccion(p_token uuid)
@@ -778,6 +781,18 @@ begin
     from coleccion c
     left join tiendas t on t.id = c.tienda_compra_id
     order by c.nombre_perfume;
+end;
+$$;
+
+-- Borra un perfume de la colección de forma permanente (ej. lo devolvió
+-- por venir roto/defectuoso). No lo mueve a ningún otro lado.
+create or replace function public.eliminar_de_coleccion(p_token uuid, p_coleccion_id uuid)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+begin
+  perform check_token(p_token);
+  delete from coleccion where id = p_coleccion_id;
 end;
 $$;
 
@@ -995,7 +1010,7 @@ revoke all on function
   public.armar_snapshot_por_probar, public.deshacer_movimiento, public.listar_movimientos_recientes,
   public.listar_pendientes_compra, public.ya_lo_compre,
   public.listar_pendientes_probar, public.volver_a_por_probar, public.eliminar_pendiente_probar,
-  public.listar_coleccion, public.listar_lista_negra,
+  public.listar_coleccion, public.eliminar_de_coleccion, public.listar_lista_negra,
   public.listar_candidatos_duplicado, public.exportar_datos,
   public.importar_coleccion, public.importar_lista_negra, public.importar_por_probar
   from public;
@@ -1026,6 +1041,7 @@ grant execute on function public.listar_pendientes_probar(uuid) to anon;
 grant execute on function public.volver_a_por_probar(uuid, uuid, uuid, numeric, text, text, text) to anon;
 grant execute on function public.eliminar_pendiente_probar(uuid, uuid) to anon;
 grant execute on function public.listar_coleccion(uuid) to anon;
+grant execute on function public.eliminar_de_coleccion(uuid, uuid) to anon;
 grant execute on function public.listar_lista_negra(uuid) to anon;
 grant execute on function public.listar_candidatos_duplicado(uuid) to anon;
 grant execute on function public.importar_coleccion(uuid, jsonb) to anon;

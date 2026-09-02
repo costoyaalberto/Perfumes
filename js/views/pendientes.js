@@ -184,9 +184,10 @@ async function handleVolvio(item) {
   }
   const el = openModal(`
     <h3>Volvió a aparecer — ${escapeHtml(item.nombre_perfume)}</h3>
-    <p class="import-format">Se vuelve a agregar a "Por Probar" en la tienda que elijas.</p>
+    <p class="import-format">Estaba sin stock en <strong>${escapeHtml(item.tienda_nombre || '—')}</strong> —
+      dejamos esa tienda preseleccionada por si reapareció ahí mismo; cambia la opción si fue en otro lado.</p>
     <form id="form-volvio">
-      ${storeAndPriceFieldsHtml(tiendas, { comentario: item.comentario })}
+      ${storeAndPriceFieldsHtml(tiendas, { tienda_id: item.tienda_agotado_id, comentario: item.comentario })}
       <div class="modal-actions">
         <button type="button" class="btn btn-secondary" data-action="cancel">Cancelar</button>
         <button type="submit" class="btn btn-primary">Volver a Por Probar</button>

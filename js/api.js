@@ -72,6 +72,7 @@ export const api = {
   listarMovimientosRecientes: () => rpc('listar_movimientos_recientes'),
 
   listarColeccion: () => rpc('listar_coleccion'),
+  eliminarDeColeccion: (p_coleccion_id) => rpc('eliminar_de_coleccion', { p_coleccion_id }),
   listarListaNegra: () => rpc('listar_lista_negra'),
 
   listarCandidatosDuplicado: () => rpc('listar_candidatos_duplicado'),
