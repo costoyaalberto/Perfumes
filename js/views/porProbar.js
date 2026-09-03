@@ -339,10 +339,16 @@ async function handleMeGusto(row) {
            </div>
          </form>`
       : `<p>Se moverá a <strong>Pendientes de Compra</strong> (modalidad "solo probar").</p>
-         <div class="modal-actions">
-           <button type="button" class="btn btn-secondary" data-action="cancel">Cancelar</button>
-           <button type="button" class="btn btn-success" data-action="confirmar">Mover a Pendientes</button>
-         </div>`}
+         <form id="form-me-gusto-pendiente">
+           <div class="form-row">
+             <label>¿Dónde piensas comprarlo? (opcional, se puede editar después)</label>
+             <input type="text" name="donde_comprar" placeholder="Ej: Tienda X, Online, Falabella..." />
+           </div>
+           <div class="modal-actions">
+             <button type="button" class="btn btn-secondary" data-action="cancel">Cancelar</button>
+             <button type="submit" class="btn btn-success">Mover a Pendientes</button>
+           </div>
+         </form>`}
   `);
   el.querySelector('[data-action="cancel"]').addEventListener('click', closeModal);
   if (esCompra) {
@@ -350,7 +356,7 @@ async function handleMeGusto(row) {
       ev.preventDefault();
       const precio = Number(new FormData(ev.target).get('precio'));
       try {
-        const historialId = await api.meGusto(row.por_probar_tienda_id, precio);
+        const historialId = await api.meGusto(row.por_probar_tienda_id, precio, null);
         closeModal();
         avisarConDeshacer('Movido a Colección 🎉', historialId);
         render();
@@ -359,9 +365,11 @@ async function handleMeGusto(row) {
       }
     });
   } else {
-    el.querySelector('[data-action="confirmar"]').addEventListener('click', async () => {
+    el.querySelector('#form-me-gusto-pendiente').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const dondeComprar = new FormData(ev.target).get('donde_comprar');
       try {
-        const historialId = await api.meGusto(row.por_probar_tienda_id, null);
+        const historialId = await api.meGusto(row.por_probar_tienda_id, null, dondeComprar || null);
         closeModal();
         avisarConDeshacer('Movido a Pendientes de Compra', historialId);
         render();

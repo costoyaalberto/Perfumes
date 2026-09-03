@@ -79,9 +79,10 @@ function updateBadge() {
 
 function cardHtml(p) {
   return `
-    <div class="card" data-id="${p.id}">
+    <div class="card card-clickable" data-id="${p.id}">
       <div class="card-title">${escapeHtml(p.nombre_perfume)}</div>
       ${p.referencia ? `<div class="card-ref">Ref: ${escapeHtml(p.referencia)}</div>` : ''}
+      <div class="card-store-line">🛒 Comprar en: <strong>${escapeHtml(p.donde_comprar || 'Sin definir (toca para editar)')}</strong></div>
       <div class="card-meta">
         <span class="chip chip-try">Probado en ${escapeHtml(p.tienda_nombre || '—')}</span>
         <span class="chip chip-price">${formatFecha(p.fecha_prueba)}</span>
@@ -99,8 +100,8 @@ function cardHtmlProbar(p) {
     <div class="card" data-id-probar="${p.id}">
       <div class="card-title">${escapeHtml(p.nombre_perfume)}</div>
       ${p.referencia ? `<div class="card-ref">Ref: ${escapeHtml(p.referencia)}</div>` : ''}
+      <div class="card-store-line">📍 Sin stock en: <strong>${escapeHtml(p.tienda_nombre || '—')}</strong></div>
       <div class="card-meta">
-        <span class="chip chip-warn">Sin stock (visto en ${escapeHtml(p.tienda_nombre || '—')})</span>
         <span class="chip chip-price">${formatFecha(p.fecha)}</span>
       </div>
       ${p.comentario ? `<div class="card-comment">${escapeHtml(p.comentario)}</div>` : ''}
@@ -113,11 +114,18 @@ function cardHtmlProbar(p) {
 }
 
 content.addEventListener('click', async (e) => {
-  const btn = e.target.closest('[data-action="ya-lo-compre"]');
-  if (!btn) return;
   const card = e.target.closest('[data-id]');
+  if (!card) return;
   const item = items.find((i) => i.id === card.dataset.id);
-  if (item) handleYaLoCompre(item);
+  if (!item) return;
+
+  const btn = e.target.closest('button[data-action]');
+  if (btn) {
+    if (btn.dataset.action === 'ya-lo-compre') return handleYaLoCompre(item);
+    return;
+  }
+
+  handleEditarPendienteCompra(item);
 });
 
 contentProbar.addEventListener('click', async (e) => {
@@ -144,7 +152,7 @@ async function handleYaLoCompre(item) {
       </div>
       <div class="form-row">
         <label>Canal (si no es una tienda del catálogo)</label>
-        <input type="text" name="canal_compra" placeholder="Ej: AliExpress, Falabella online..." />
+        <input type="text" name="canal_compra" placeholder="Ej: AliExpress, Falabella online..." value="${escapeHtml(item.donde_comprar || '')}" />
       </div>
       <div class="form-row">
         <label>Precio</label>
@@ -169,6 +177,73 @@ async function handleYaLoCompre(item) {
       });
       closeModal();
       toast('Movido a Colección 🎉');
+      render();
+    } catch (err) {
+      toast('Error: ' + err.message, true);
+    }
+  });
+}
+
+async function handleEditarPendienteCompra(item) {
+  const el = openModal(`
+    <h3>Editar pendiente de compra</h3>
+    <form id="form-editar-pendiente">
+      <div class="form-row">
+        <label>Nombre del perfume</label>
+        <input type="text" name="nombre" required value="${escapeHtml(item.nombre_perfume)}" />
+      </div>
+      <div class="form-row">
+        <label>Referencia / a qué imita</label>
+        <input type="text" name="referencia" value="${escapeHtml(item.referencia || '')}" />
+      </div>
+      <div class="form-row">
+        <label>¿Dónde piensas comprarlo?</label>
+        <input type="text" name="donde_comprar" placeholder="Ej: Tienda X, Online, Falabella..." value="${escapeHtml(item.donde_comprar || '')}" />
+      </div>
+      <div class="form-row">
+        <label>Comentario</label>
+        <textarea name="comentario" rows="2">${escapeHtml(item.comentario || '')}</textarea>
+      </div>
+      <div class="modal-actions" style="justify-content:space-between;">
+        <button type="button" class="btn btn-danger btn-sm" data-action="eliminar">Eliminar</button>
+        <div style="display:flex; gap:10px;">
+          <button type="button" class="btn btn-secondary" data-action="cancel">Cancelar</button>
+          <button type="submit" class="btn btn-primary">Guardar</button>
+        </div>
+      </div>
+    </form>
+  `);
+  el.querySelector('[data-action="cancel"]').addEventListener('click', closeModal);
+  el.querySelector('[data-action="eliminar"]').addEventListener('click', async () => {
+    const ok = await confirmDialog({
+      title: 'Eliminar pendiente de compra',
+      message: `¿Eliminar "${escapeHtml(item.nombre_perfume)}" de Pendientes de Compra? Esta acción no se puede deshacer.`,
+      confirmLabel: 'Eliminar',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await api.eliminarPendienteCompra(item.id);
+      closeModal();
+      toast('Eliminado');
+      render();
+    } catch (err) {
+      toast('Error: ' + err.message, true);
+    }
+  });
+  el.querySelector('#form-editar-pendiente').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target);
+    try {
+      await api.editarPendienteCompra({
+        p_pendiente_id: item.id,
+        p_nombre_perfume: fd.get('nombre').trim(),
+        p_referencia: fd.get('referencia') || null,
+        p_comentario: fd.get('comentario') || null,
+        p_donde_comprar: fd.get('donde_comprar') || null,
+      });
+      closeModal();
+      toast('Guardado');
       render();
     } catch (err) {
       toast('Error: ' + err.message, true);

@@ -113,6 +113,7 @@ create table if not exists app_config (
 -- ---------------------------------------------------------------------
 
 alter table por_probar add column if not exists destacado boolean not null default false;
+alter table pendientes_compra add column if not exists donde_comprar text;
 
 -- ---------------------------------------------------------------------
 -- 2. BLOQUEO DE ACCESO DIRECTO
@@ -397,7 +398,9 @@ $$;
 -- acción. Guarda un snapshot en historial_movimientos y retorna su id para
 -- que el frontend pueda ofrecer "Deshacer".
 drop function if exists public.me_gusto(uuid, uuid, numeric);
-create or replace function public.me_gusto(p_token uuid, p_por_probar_tienda_id uuid, p_precio_final numeric)
+create or replace function public.me_gusto(
+  p_token uuid, p_por_probar_tienda_id uuid, p_precio_final numeric, p_donde_comprar text default null
+)
 returns uuid
 language plpgsql security definer set search_path = public
 as $$
@@ -433,8 +436,8 @@ begin
     insert into historial_movimientos (tipo, snapshot, destino_id)
       values ('compra', v_snapshot, v_destino_id) returning id into v_historial_id;
   else
-    insert into pendientes_compra (nombre_perfume, referencia, comentario, tienda_probada_id, fecha_prueba)
-      values (v_nombre, v_referencia, v_comentario, v_tienda_id, current_date)
+    insert into pendientes_compra (nombre_perfume, referencia, comentario, tienda_probada_id, fecha_prueba, donde_comprar)
+      values (v_nombre, v_referencia, v_comentario, v_tienda_id, current_date, nullif(trim(coalesce(p_donde_comprar, '')), ''))
       returning id into v_destino_id;
     insert into historial_movimientos (tipo, snapshot, destino_id)
       values ('pendiente_compra', v_snapshot, v_destino_id) returning id into v_historial_id;
@@ -656,10 +659,12 @@ $$;
 -- 6. PENDIENTES DE COMPRA
 -- ---------------------------------------------------------------------
 
+-- drop porque cambia la forma de la tabla retornada (se agregó "donde_comprar")
+drop function if exists public.listar_pendientes_compra(uuid);
 create or replace function public.listar_pendientes_compra(p_token uuid)
 returns table (
   id uuid, nombre_perfume text, referencia text, comentario text,
-  tienda_probada_id uuid, tienda_nombre text, fecha_prueba date
+  tienda_probada_id uuid, tienda_nombre text, fecha_prueba date, donde_comprar text
 )
 language plpgsql security definer set search_path = public
 as $$
@@ -667,10 +672,41 @@ begin
   perform check_token(p_token);
   return query
     select pc.id, pc.nombre_perfume, pc.referencia, pc.comentario,
-           pc.tienda_probada_id, t.nombre, pc.fecha_prueba
+           pc.tienda_probada_id, t.nombre, pc.fecha_prueba, pc.donde_comprar
     from pendientes_compra pc
     left join tiendas t on t.id = pc.tienda_probada_id
     order by pc.fecha_prueba desc;
+end;
+$$;
+
+-- Edita nombre/referencia/comentario y dónde se piensa comprar (texto
+-- libre: tienda del catálogo o cualquier otro canal).
+create or replace function public.editar_pendiente_compra(
+  p_token uuid, p_pendiente_id uuid, p_nombre_perfume text, p_referencia text,
+  p_comentario text, p_donde_comprar text
+)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+begin
+  perform check_token(p_token);
+  update pendientes_compra
+    set nombre_perfume = trim(p_nombre_perfume),
+        referencia = nullif(trim(p_referencia), ''),
+        comentario = p_comentario,
+        donde_comprar = nullif(trim(coalesce(p_donde_comprar, '')), '')
+    where id = p_pendiente_id;
+end;
+$$;
+
+-- Elimina definitivamente (ej. decidió que ya no lo quiere comprar).
+create or replace function public.eliminar_pendiente_compra(p_token uuid, p_pendiente_id uuid)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+begin
+  perform check_token(p_token);
+  delete from pendientes_compra where id = p_pendiente_id;
 end;
 $$;
 
@@ -1009,6 +1045,7 @@ revoke all on function
   public.toggle_destacado, public.cambiar_tienda_por_probar, public.obtener_contadores,
   public.armar_snapshot_por_probar, public.deshacer_movimiento, public.listar_movimientos_recientes,
   public.listar_pendientes_compra, public.ya_lo_compre,
+  public.editar_pendiente_compra, public.eliminar_pendiente_compra,
   public.listar_pendientes_probar, public.volver_a_por_probar, public.eliminar_pendiente_probar,
   public.listar_coleccion, public.eliminar_de_coleccion, public.listar_lista_negra,
   public.listar_candidatos_duplicado, public.exportar_datos,
@@ -1024,7 +1061,7 @@ grant execute on function public.listar_por_probar(uuid) to anon;
 grant execute on function public.crear_por_probar(uuid, text, text, uuid, numeric, text, text, text) to anon;
 grant execute on function public.agregar_tienda_a_por_probar(uuid, uuid, uuid, numeric, text, text, text) to anon;
 grant execute on function public.marcar_sin_probador(uuid, uuid) to anon;
-grant execute on function public.me_gusto(uuid, uuid, numeric) to anon;
+grant execute on function public.me_gusto(uuid, uuid, numeric, text) to anon;
 grant execute on function public.no_me_gusto(uuid, uuid, text) to anon;
 grant execute on function public.editar_por_probar(uuid, uuid, text, text, numeric, text, text, text) to anon;
 grant execute on function public.eliminar_por_probar_tienda(uuid, uuid) to anon;
@@ -1036,6 +1073,8 @@ grant execute on function public.deshacer_movimiento(uuid, uuid) to anon;
 grant execute on function public.listar_movimientos_recientes(uuid) to anon;
 grant execute on function public.exportar_datos(uuid) to anon;
 grant execute on function public.listar_pendientes_compra(uuid) to anon;
+grant execute on function public.editar_pendiente_compra(uuid, uuid, text, text, text, text) to anon;
+grant execute on function public.eliminar_pendiente_compra(uuid, uuid) to anon;
 grant execute on function public.ya_lo_compre(uuid, uuid, uuid, text, numeric) to anon;
 grant execute on function public.listar_pendientes_probar(uuid) to anon;
 grant execute on function public.volver_a_por_probar(uuid, uuid, uuid, numeric, text, text, text) to anon;

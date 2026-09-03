@@ -227,6 +227,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 }
 .card-title { font-weight: 700; font-size: 1.02rem; margin-bottom: 2px; }
 .card-ref { color: var(--muted); font-size: 0.85rem; margin-bottom: 6px; }
+.card-store-line { font-size: 0.95rem; margin-bottom: 8px; }
 .card-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .card-comment { font-size: 0.88rem; color: var(--text); margin-bottom: 10px; white-space: pre-wrap; }
 .card-actions { display: flex; flex-wrap: wrap; gap: 8px; }
