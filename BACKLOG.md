@@ -14,6 +14,18 @@ en: X"), no solo dentro del modal de "Ya volvió".
 
 ---
 
+## 3. Renombrar pestaña "Importar" a "Datos" y mover ahí el backup
+
+**Decisión**: la pestaña **Importar** (la última de la barra) pasa a
+llamarse **Datos**. Ahí van a vivir tanto la importación masiva (lo que
+ya existe) como el botón de **"Exportar backup (JSON)"** (que hoy vive
+en Tiendas, donde no se ve/no es intuitivo encontrarlo) y, cuando se
+implemente, el botón del reporte de novedades (item 2). Botón de backup
+más grande y prominente (arriba o abajo de la página, a definir cuando
+se implemente).
+
+---
+
 ## 2. Reporte de "novedades" para pegar en el chat de seguimiento
 
 **Problema**: cada vez que se agrega algo a Colección o Lista Negra, hay
@@ -26,25 +38,31 @@ descarga TODO (las 120+ de colección, las 90+ de lista negra, etc.) cada
 vez — para pegar en un chat de seguimiento sirve un reporte de **solo lo
 nuevo desde la última vez**, no un dump completo repetido.
 
+**Decisión de enfoque**: en vez de una columna "ya enviado" (que nunca
+se pierde nada pero requiere marcar/desmarcar), usar una **ventana de
+tiempo**: perfumes agregados a Colección o Lista Negra en las **últimas
+24-48 horas** (a definir el número exacto, quizás seleccionable al
+generar el reporte). Más simple de implementar — no toca el esquema de
+las tablas — con la contra de que si pasan más de 2 días sin generar el
+reporte, algo podría quedar afuera. Aceptable dado el uso real (se
+genera apenas después de comprar/rechazar algo).
+
 **Idea de solución** (a definir en detalle cuando se implemente):
-- Agregar una columna a `coleccion` y a `lista_negra`, algo como
-  `enviado_a_seguimiento boolean not null default false`.
-- Nueva función RPC (ej. `generar_reporte_seguimiento`) que junta las
-  filas con `enviado_a_seguimiento = false` de ambas tablas, arma un
+- Nueva función RPC (ej. `generar_reporte_seguimiento(p_token uuid, p_horas int default 48)`)
+  que junta `coleccion` (por `created_at`/`fecha_compra`) y `lista_negra`
+  (por `created_at`/`fecha`) de las últimas `p_horas` horas, arma un
   texto plano legible tipo:
   ```
-  === NUEVO EN COLECCIÓN ===
+  === NUEVO EN COLECCIÓN (últimas 48h) ===
   1. Nombre — Referencia — Precio — Tienda/canal — Fecha
 
-  === NUEVO EN LISTA NEGRA ===
+  === NUEVO EN LISTA NEGRA (últimas 48h) ===
   1. Nombre — Motivo — Tienda — Fecha
   ```
-  y marca esas filas como `enviado_a_seguimiento = true` (para que la
-  próxima vez solo traiga lo que se agregó después).
-- Un botón (¿dónde? a definir — quizás junto al de "Exportar backup" en
-  Tiendas) que muestra ese texto en un modal con botón "Copiar" (para
-  pegarlo directo en el otro chat), no como descarga de archivo.
-- Caso sin novedades: mostrar "No hay novedades desde el último reporte."
+- Botón en la pestaña **Datos** (ver item 3) que muestra ese texto en un
+  modal con botón "Copiar" (para pegarlo directo en el otro chat), no
+  como descarga de archivo.
+- Caso sin novedades: mostrar "No hay novedades en las últimas X horas."
 
 ---
 
