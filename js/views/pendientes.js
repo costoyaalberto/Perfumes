@@ -2,12 +2,14 @@ import { api } from '../api.js';
 import { getTiendas } from '../store.js';
 import { openModal, closeModal, confirmDialog } from '../modal.js';
 import { storeAndPriceFieldsHtml } from './porProbar.js';
-import { formatFecha, escapeHtml, toast } from '../utils.js';
+import { formatFecha, escapeHtml, normalizarNombre, toast } from '../utils.js';
 
 const content = document.getElementById('pendientes-content');
 const contentProbar = document.getElementById('pendientes-probar-content');
 const contentMovimientos = document.getElementById('movimientos-content');
 const badge = document.getElementById('badge-pendientes');
+const searchInput = document.getElementById('buscar-pendientes');
+const searchInputProbar = document.getElementById('buscar-pendientes-probar');
 let items = [];
 let itemsProbar = [];
 let movimientos = [];
@@ -22,25 +24,40 @@ export async function render() {
   content.innerHTML = '<p class="empty-state">Cargando…</p>';
   contentProbar.innerHTML = '<p class="empty-state">Cargando…</p>';
   contentMovimientos.innerHTML = '<p class="empty-state">Cargando…</p>';
+  searchInput.value = '';
+  searchInputProbar.value = '';
   [items, itemsProbar, movimientos] = await Promise.all([
     api.listarPendientes(),
     api.listarPendientesProbar(),
     api.listarMovimientosRecientes(),
   ]);
   updateBadge();
-
-  content.innerHTML = items.length
-    ? items.map(cardHtml).join('')
-    : '<p class="empty-state">No tienes perfumes pendientes de compra.</p>';
-
-  contentProbar.innerHTML = itemsProbar.length
-    ? itemsProbar.map(cardHtmlProbar).join('')
-    : '<p class="empty-state">No tienes perfumes marcados como sin stock.</p>';
+  drawPendientes();
+  drawPendientesProbar();
 
   contentMovimientos.innerHTML = movimientos.length
     ? movimientos.map(movimientoHtml).join('')
     : '<p class="empty-state">Sin movimientos en las últimas 48 horas.</p>';
 }
+
+function drawPendientes() {
+  const q = normalizarNombre(searchInput.value);
+  const list = q ? items.filter((p) => normalizarNombre(p.nombre_perfume).includes(q)) : items;
+  content.innerHTML = list.length
+    ? list.map(cardHtml).join('')
+    : `<p class="empty-state">${items.length ? 'Sin resultados.' : 'No tienes perfumes pendientes de compra.'}</p>`;
+}
+
+function drawPendientesProbar() {
+  const q = normalizarNombre(searchInputProbar.value);
+  const list = q ? itemsProbar.filter((p) => normalizarNombre(p.nombre_perfume).includes(q)) : itemsProbar;
+  contentProbar.innerHTML = list.length
+    ? list.map(cardHtmlProbar).join('')
+    : `<p class="empty-state">${itemsProbar.length ? 'Sin resultados.' : 'No tienes perfumes marcados como sin stock.'}</p>`;
+}
+
+searchInput.addEventListener('input', drawPendientes);
+searchInputProbar.addEventListener('input', drawPendientesProbar);
 
 function movimientoHtml(m) {
   return `
