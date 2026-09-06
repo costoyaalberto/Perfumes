@@ -77,4 +77,59 @@ Al estar todo junto en una sola lista, se confunden entre sí.
 
 ---
 
+## 7. Tema oscuro fijo (negro + morado) — sin toggle, sin modo claro
+
+Cambiar la app de tema claro a tema oscuro fijo (sin toggle, sin modo
+claro — solo oscuro, siempre). Mantener el morado ya usado en el header
+y en el badge "Comprar aquí" como color de acento; no introducir una
+paleta nueva.
+
+**Estado actual del CSS (revisado, para cuando se implemente)**: los
+colores base SÍ están centralizados como variables en `:root` de
+`css/styles.css` (`--violet`, `--bg`, `--card-bg`, `--border`, `--text`,
+`--muted`, `--green`, `--red`, `--amber`, etc.) — el cambio de esas
+variables debería propagarse solo. Pero los colores de los **chips/
+badges** (`.chip-price`, `.chip-ok`, `.chip-warn`, `.chip-buy`,
+`.chip-try`) están con hex hardcodeado directo en cada clase, no en
+variables — hay que centralizarlos primero (agregar variables nuevas
+para cada par fondo/texto de badge) y recién ahí aplicar la paleta,
+para no repetir el mismo hex en varios lugares. Lo mismo revisar en
+inputs/modal/toast, que usan `white`/rgba hardcodeados en vez de
+variables en algunos puntos.
+
+**Paleta objetivo**:
+- Fondo de página: `#0d0d0f`
+- Fondo de tarjetas: `#1c1c1f`
+- Borde de tarjetas: `#2c2c30`
+- Texto principal: `#f2f2f0`
+- Texto secundario/muted: `#a8a8ac`
+- Badge precio — fondo `#3a2a12`, texto `#f5c26b`
+- Badge "Con probador" — fondo `#163a24`, texto `#4ade80`
+- Badge "Sin probador" — variante rojo/ámbar apagado consistente con el
+  resto (fondo oscuro + texto claro del mismo tono, mismo patrón que los
+  demás badges)
+- Badge "Comprar aquí" — fondo `#241b3d`, texto `#b39ddb` (mantiene el
+  morado de marca)
+- Badge "Solo probar" — mantener su distinción visual actual, adaptada a
+  fondo oscuro con el mismo criterio
+- Botón "Me gustó" — fondo `#1f7a4c`, texto blanco
+- Botón "No me gustó" — fondo `#a13333`, texto blanco
+- Botón "Sin probador" / outline — borde `#3d3d40`, texto `#f2f2f0`,
+  fondo transparente
+
+**Alcance**: todas las vistas (Por Probar, Pendientes por Probar,
+Pendientes de Compra, Colección, Lista Negra, Tiendas, Datos), más
+modales, inputs, dropdowns, y el header morado (verificar que siga
+funcionando bien sobre el nuevo fondo). Revisar contraste de cada badge
+— deben ser legibles bajo luz de tienda.
+
+**Qué NO hacer**: no tocar layout/estructura/lógica funcional (solo
+color/estilo), no agregar switch de tema ni persistencia por usuario
+(el oscuro pasa a ser el único modo), no tocar modelo de datos ni RPCs.
+
+**Al terminar**: subir el número de versión visible en la UI y verificar
+visualmente las vistas antes de dar por cerrado.
+
+---
+
 *(Agregar más ideas acá abajo a medida que surjan, en el mismo formato.)*
