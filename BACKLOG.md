@@ -66,4 +66,35 @@ genera apenas después de comprar/rechazar algo).
 
 ---
 
+## 4. Editar tarjetas de "Pendientes por Probar"
+
+**Problema**: la tarjeta es fija — solo tiene "Ya volvió" y "Eliminar".
+El comentario puede cambiar con el tiempo (ej. se entera de más detalles
+del perfume) y hoy no hay forma de actualizarlo sin pasar por todo el
+flujo de "Ya volvió"/"Eliminar".
+
+**Idea de solución**: mismo patrón que ya se usa en Por Probar y en
+Pendientes de Compra — hacer la tarjeta clickeable (fuera de los
+botones) para abrir un modal de editar nombre/referencia/comentario.
+Nueva función RPC, ej. `editar_pendiente_probar(p_token, p_pendiente_probar_id, p_nombre_perfume, p_referencia, p_comentario)`.
+
+---
+
+## 5. Lista Negra: poder editar y borrar
+
+**Problema**: hoy Lista Negra es 100% de solo lectura (ni editar ni
+borrar). Hay entradas duplicadas (mismo perfume cargado dos veces,
+probablemente de la importación inicial) que no se pueden limpiar.
+
+**Idea de solución**: mismo patrón que se usó para Colección (que ya
+tiene botón "Eliminar" — ver v5) — agregar:
+- `eliminar_de_lista_negra(p_token, p_lista_negra_id)` + botón
+  "Eliminar" en cada tarjeta, con confirmación (para los duplicados y
+  errores de carga).
+- De paso, ya que se toca esta vista: tarjeta clickeable para editar
+  nombre/motivo/comentario (mismo criterio que las demás listas),
+  función `editar_lista_negra(p_token, p_lista_negra_id, p_nombre_perfume, p_motivo, p_comentario)`.
+
+---
+
 *(Agregar más ideas acá abajo a medida que surjan, en el mismo formato.)*
