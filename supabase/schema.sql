@@ -784,6 +784,25 @@ begin
 end;
 $$;
 
+-- Edita nombre/referencia/comentario (pueden cambiar mientras el perfume
+-- espera a que vuelva a haber stock en algún lado).
+create or replace function public.editar_pendiente_probar(
+  p_token uuid, p_pendiente_probar_id uuid,
+  p_nombre_perfume text, p_referencia text, p_comentario text
+)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+begin
+  perform check_token(p_token);
+  update pendientes_probar
+    set nombre_perfume = trim(p_nombre_perfume),
+        referencia = nullif(trim(coalesce(p_referencia, '')), ''),
+        comentario = p_comentario
+    where id = p_pendiente_probar_id;
+end;
+$$;
+
 create or replace function public.eliminar_pendiente_probar(p_token uuid, p_pendiente_probar_id uuid)
 returns void
 language plpgsql security definer set search_path = public
@@ -847,6 +866,38 @@ begin
     from lista_negra ln
     left join tiendas t on t.id = ln.tienda_probada_id
     order by ln.nombre_perfume;
+end;
+$$;
+
+-- Edita nombre/motivo/comentario (ej. para corregir errores de carga).
+create or replace function public.editar_lista_negra(
+  p_token uuid, p_lista_negra_id uuid, p_nombre_perfume text, p_motivo text, p_comentario text
+)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+begin
+  perform check_token(p_token);
+  if p_motivo is null or trim(p_motivo) = '' then
+    raise exception 'El motivo es obligatorio';
+  end if;
+  update lista_negra
+    set nombre_perfume = trim(p_nombre_perfume),
+        motivo = trim(p_motivo),
+        comentario = p_comentario
+    where id = p_lista_negra_id;
+end;
+$$;
+
+-- Borra un perfume de la lista negra de forma permanente (ej. duplicados
+-- de la carga inicial).
+create or replace function public.eliminar_de_lista_negra(p_token uuid, p_lista_negra_id uuid)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+begin
+  perform check_token(p_token);
+  delete from lista_negra where id = p_lista_negra_id;
 end;
 $$;
 
@@ -945,6 +996,66 @@ begin
     )
   ) into v_result;
   return v_result;
+end;
+$$;
+
+-- Texto plano listo para pegar en otro chat: solo lo agregado a Colección
+-- y Lista Negra en las últimas p_horas horas (por defecto 48), no un
+-- dump completo como exportar_datos.
+create or replace function public.generar_reporte_seguimiento(p_token uuid, p_horas int default 48)
+returns text
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_coleccion text;
+  v_lista_negra text;
+  v_desde timestamptz;
+begin
+  perform check_token(p_token);
+  v_desde := now() - (p_horas::text || ' hours')::interval;
+
+  select string_agg(
+    format('%s. %s — %s — %s — %s — %s',
+      x.rn, x.nombre_perfume, x.referencia, x.precio, x.tienda, x.fecha),
+    E'\n' order by x.rn
+  )
+  into v_coleccion
+  from (
+    select row_number() over (order by c.created_at) as rn,
+           c.nombre_perfume,
+           coalesce(nullif(c.referencia, ''), 'sin referencia') as referencia,
+           coalesce(c.precio::text, 'sin precio') as precio,
+           coalesce(t.nombre, c.canal_compra, 'sin especificar') as tienda,
+           to_char(c.fecha_compra, 'DD-MM-YYYY') as fecha
+    from coleccion c
+    left join tiendas t on t.id = c.tienda_compra_id
+    where c.created_at > v_desde
+  ) x;
+
+  select string_agg(
+    format('%s. %s — %s — %s — %s',
+      x.rn, x.nombre_perfume, x.motivo, x.tienda, x.fecha),
+    E'\n' order by x.rn
+  )
+  into v_lista_negra
+  from (
+    select row_number() over (order by ln.created_at) as rn,
+           ln.nombre_perfume, ln.motivo,
+           coalesce(t.nombre, 'sin especificar') as tienda,
+           to_char(ln.fecha, 'DD-MM-YYYY') as fecha
+    from lista_negra ln
+    left join tiendas t on t.id = ln.tienda_probada_id
+    where ln.created_at > v_desde
+  ) x;
+
+  if v_coleccion is null and v_lista_negra is null then
+    return format('No hay novedades en las últimas %s horas.', p_horas);
+  end if;
+
+  return format('=== NUEVO EN COLECCIÓN (últimas %s h) ===', p_horas) || E'\n'
+    || coalesce(v_coleccion, '(sin novedades)') || E'\n\n'
+    || format('=== NUEVO EN LISTA NEGRA (últimas %s h) ===', p_horas) || E'\n'
+    || coalesce(v_lista_negra, '(sin novedades)');
 end;
 $$;
 
@@ -1047,8 +1158,10 @@ revoke all on function
   public.listar_pendientes_compra, public.ya_lo_compre,
   public.editar_pendiente_compra, public.eliminar_pendiente_compra,
   public.listar_pendientes_probar, public.volver_a_por_probar, public.eliminar_pendiente_probar,
+  public.editar_pendiente_probar,
   public.listar_coleccion, public.eliminar_de_coleccion, public.listar_lista_negra,
-  public.listar_candidatos_duplicado, public.exportar_datos,
+  public.editar_lista_negra, public.eliminar_de_lista_negra,
+  public.listar_candidatos_duplicado, public.exportar_datos, public.generar_reporte_seguimiento,
   public.importar_coleccion, public.importar_lista_negra, public.importar_por_probar
   from public;
 
@@ -1079,10 +1192,14 @@ grant execute on function public.ya_lo_compre(uuid, uuid, uuid, text, numeric) t
 grant execute on function public.listar_pendientes_probar(uuid) to anon;
 grant execute on function public.volver_a_por_probar(uuid, uuid, uuid, numeric, text, text, text) to anon;
 grant execute on function public.eliminar_pendiente_probar(uuid, uuid) to anon;
+grant execute on function public.editar_pendiente_probar(uuid, uuid, text, text, text) to anon;
 grant execute on function public.listar_coleccion(uuid) to anon;
 grant execute on function public.eliminar_de_coleccion(uuid, uuid) to anon;
 grant execute on function public.listar_lista_negra(uuid) to anon;
+grant execute on function public.editar_lista_negra(uuid, uuid, text, text, text) to anon;
+grant execute on function public.eliminar_de_lista_negra(uuid, uuid) to anon;
 grant execute on function public.listar_candidatos_duplicado(uuid) to anon;
+grant execute on function public.generar_reporte_seguimiento(uuid, int) to anon;
 grant execute on function public.importar_coleccion(uuid, jsonb) to anon;
 grant execute on function public.importar_lista_negra(uuid, jsonb) to anon;
 grant execute on function public.importar_por_probar(uuid, jsonb) to anon;

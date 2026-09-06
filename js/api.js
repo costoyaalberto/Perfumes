@@ -69,6 +69,7 @@ export const api = {
   listarPendientesProbar: () => rpc('listar_pendientes_probar'),
   volverAPorProbar: (args) => rpc('volver_a_por_probar', args),
   eliminarPendienteProbar: (p_pendiente_probar_id) => rpc('eliminar_pendiente_probar', { p_pendiente_probar_id }),
+  editarPendienteProbar: (args) => rpc('editar_pendiente_probar', args),
 
   deshacerMovimiento: (p_historial_id) => rpc('deshacer_movimiento', { p_historial_id }),
   listarMovimientosRecientes: () => rpc('listar_movimientos_recientes'),
@@ -76,10 +77,13 @@ export const api = {
   listarColeccion: () => rpc('listar_coleccion'),
   eliminarDeColeccion: (p_coleccion_id) => rpc('eliminar_de_coleccion', { p_coleccion_id }),
   listarListaNegra: () => rpc('listar_lista_negra'),
+  editarListaNegra: (args) => rpc('editar_lista_negra', args),
+  eliminarDeListaNegra: (p_lista_negra_id) => rpc('eliminar_de_lista_negra', { p_lista_negra_id }),
 
   listarCandidatosDuplicado: () => rpc('listar_candidatos_duplicado'),
 
   exportarDatos: () => rpc('exportar_datos'),
+  generarReporteSeguimiento: (p_horas) => rpc('generar_reporte_seguimiento', { p_horas }),
 
   importarColeccion: (p_items) => rpc('importar_coleccion', { p_items }),
   importarListaNegra: (p_items) => rpc('importar_lista_negra', { p_items }),

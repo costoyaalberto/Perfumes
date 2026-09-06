@@ -1,9 +1,60 @@
 import { api } from '../api.js';
 import { getTiendas } from '../store.js';
+import { openModal, closeModal } from '../modal.js';
 import { parseDelimitado, normalizarNombre, escapeHtml, toast } from '../utils.js';
 
 const content = document.getElementById('importar-content');
 let initialized = false;
+
+document.getElementById('btn-exportar').addEventListener('click', async () => {
+  try {
+    const datos = await api.exportarDatos();
+    const blob = new Blob([JSON.stringify(datos, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const fecha = new Date().toISOString().slice(0, 10);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `perfumes-backup-${fecha}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast('Backup descargado');
+  } catch (err) {
+    toast('Error: ' + err.message, true);
+  }
+});
+
+document.getElementById('btn-reporte-seguimiento').addEventListener('click', async () => {
+  try {
+    const texto = await api.generarReporteSeguimiento(48);
+    mostrarReporteSeguimiento(texto);
+  } catch (err) {
+    toast('Error: ' + err.message, true);
+  }
+});
+
+function mostrarReporteSeguimiento(texto) {
+  const el = openModal(`
+    <h3>Reporte de novedades (últimas 48h)</h3>
+    <textarea id="reporte-texto" rows="14" readonly
+      style="width:100%; font-family:ui-monospace,monospace; font-size:0.8rem; white-space:pre-wrap;">${escapeHtml(texto)}</textarea>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" data-action="cerrar">Cerrar</button>
+      <button type="button" class="btn btn-primary" data-action="copiar">Copiar</button>
+    </div>
+  `);
+  el.querySelector('[data-action="cerrar"]').addEventListener('click', closeModal);
+  el.querySelector('[data-action="copiar"]').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(texto);
+      toast('Copiado al portapapeles');
+    } catch (err) {
+      el.querySelector('#reporte-texto').select();
+      toast('No se pudo copiar automático — seleccionamos el texto, cópialo con Ctrl/Cmd+C', true);
+    }
+  });
+}
 
 export async function render() {
   if (initialized) return;

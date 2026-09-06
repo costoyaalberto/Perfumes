@@ -114,7 +114,7 @@ function cardHtml(p) {
 
 function cardHtmlProbar(p) {
   return `
-    <div class="card" data-id-probar="${p.id}">
+    <div class="card card-clickable" data-id-probar="${p.id}">
       <div class="card-title">${escapeHtml(p.nombre_perfume)}</div>
       ${p.referencia ? `<div class="card-ref">Ref: ${escapeHtml(p.referencia)}</div>` : ''}
       <div class="card-store-line">📍 Sin stock en: <strong>${escapeHtml(p.tienda_nombre || '—')}</strong></div>
@@ -151,8 +151,14 @@ contentProbar.addEventListener('click', async (e) => {
   const item = itemsProbar.find((i) => i.id === card.dataset.idProbar);
   if (!item) return;
 
-  if (e.target.closest('[data-action="volvio"]')) return handleVolvio(item);
-  if (e.target.closest('[data-action="eliminar-probar"]')) return handleEliminarProbar(item);
+  const btn = e.target.closest('button[data-action]');
+  if (btn) {
+    if (btn.dataset.action === 'volvio') return handleVolvio(item);
+    if (btn.dataset.action === 'eliminar-probar') return handleEliminarProbar(item);
+    return;
+  }
+
+  handleEditarPendienteProbar(item);
 });
 
 async function handleYaLoCompre(item) {
@@ -258,6 +264,48 @@ async function handleEditarPendienteCompra(item) {
         p_referencia: fd.get('referencia') || null,
         p_comentario: fd.get('comentario') || null,
         p_donde_comprar: fd.get('donde_comprar') || null,
+      });
+      closeModal();
+      toast('Guardado');
+      render();
+    } catch (err) {
+      toast('Error: ' + err.message, true);
+    }
+  });
+}
+
+async function handleEditarPendienteProbar(item) {
+  const el = openModal(`
+    <h3>Editar — sin stock</h3>
+    <form id="form-editar-pendiente-probar">
+      <div class="form-row">
+        <label>Nombre del perfume</label>
+        <input type="text" name="nombre" required value="${escapeHtml(item.nombre_perfume)}" />
+      </div>
+      <div class="form-row">
+        <label>Referencia / a qué imita</label>
+        <input type="text" name="referencia" value="${escapeHtml(item.referencia || '')}" />
+      </div>
+      <div class="form-row">
+        <label>Comentario</label>
+        <textarea name="comentario" rows="2">${escapeHtml(item.comentario || '')}</textarea>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" data-action="cancel">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Guardar</button>
+      </div>
+    </form>
+  `);
+  el.querySelector('[data-action="cancel"]').addEventListener('click', closeModal);
+  el.querySelector('#form-editar-pendiente-probar').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target);
+    try {
+      await api.editarPendienteProbar({
+        p_pendiente_probar_id: item.id,
+        p_nombre_perfume: fd.get('nombre').trim(),
+        p_referencia: fd.get('referencia') || null,
+        p_comentario: fd.get('comentario') || null,
       });
       closeModal();
       toast('Guardado');

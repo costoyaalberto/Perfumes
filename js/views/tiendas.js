@@ -38,25 +38,6 @@ content.addEventListener('change', async (e) => {
   }
 });
 
-document.getElementById('btn-exportar').addEventListener('click', async () => {
-  try {
-    const datos = await api.exportarDatos();
-    const blob = new Blob([JSON.stringify(datos, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const fecha = new Date().toISOString().slice(0, 10);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `perfumes-backup-${fecha}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    toast('Backup descargado');
-  } catch (err) {
-    toast('Error: ' + err.message, true);
-  }
-});
-
 document.getElementById('btn-nueva-tienda').addEventListener('click', () => {
   const el = openModal(`
     <h3>Nueva tienda</h3>

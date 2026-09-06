@@ -31,7 +31,7 @@
   <header class="topbar">
     <h1>🧴 Perfumes</h1>
     <div class="topbar-right">
-      <span class="version-tag">v7</span>
+      <span class="version-tag">v8</span>
       <button id="btn-logout" class="btn-icon" title="Cerrar sesión en este dispositivo">⏻</button>
     </div>
   </header>
@@ -101,14 +101,16 @@
         <h2>Tiendas</h2>
         <button id="btn-nueva-tienda" class="btn btn-primary">+ Tienda</button>
       </div>
-      <div class="filter-row">
-        <button id="btn-exportar" class="btn btn-outline btn-sm">⬇ Exportar backup (JSON)</button>
-      </div>
       <div id="tiendas-content" class="content"></div>
     </section>
 
     <section id="view-importar" class="view hidden">
-      <div class="view-header"><h2>Importar datos</h2></div>
+      <div class="view-header"><h2>Datos</h2></div>
+      <div id="datos-acciones" style="display:flex; flex-direction:column; gap:10px; margin-bottom:22px;">
+        <button id="btn-exportar" class="btn btn-primary btn-block">⬇ Exportar backup completo (JSON)</button>
+        <button id="btn-reporte-seguimiento" class="btn btn-outline btn-block">📋 Generar reporte de novedades</button>
+      </div>
+      <div class="view-header"><h2 style="font-size:1.05rem;">Importar datos</h2></div>
       <div id="importar-content" class="content"></div>
     </section>
   </main>
@@ -119,7 +121,7 @@
     <button data-route="coleccion" class="tab-btn">Colección</button>
     <button data-route="lista-negra" class="tab-btn">Lista Negra</button>
     <button data-route="tiendas" class="tab-btn">Tiendas</button>
-    <button data-route="importar" class="tab-btn">Importar</button>
+    <button data-route="importar" class="tab-btn">Datos</button>
   </nav>
 </div>
 
