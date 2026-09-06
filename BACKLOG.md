@@ -132,4 +132,18 @@ visualmente las vistas antes de dar por cerrado.
 
 ---
 
+## 8. Destacar visualmente las tarjetas marcadas con ★
+
+**Problema**: hoy "destacado" solo se ve en la estrellita pequeña de la
+tarjeta (☆ vs ★) — fácil de no notar al escanear la lista rápido.
+
+**Idea de solución**: cuando `destacado = true`, la tarjeta en Por
+Probar debería saltar a la vista con algo más que la estrella — por
+ejemplo borde de otro color (usar el acento morado o el amarillo/dorado
+de la estrella activa, `#e0a72b`, ya definido en `.star-btn.active`) y/o
+un fondo levemente distinto. Definir el tratamiento exacto cuando se
+implemente (ver también el item 7, tema oscuro, para que combinen).
+
+---
+
 *(Agregar más ideas acá abajo a medida que surjan, en el mismo formato.)*
