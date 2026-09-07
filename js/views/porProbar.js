@@ -77,7 +77,7 @@ function cardHtml(r) {
     ? '<span class="chip chip-buy">Comprar aquí</span>'
     : '<span class="chip chip-try">Solo probar</span>';
   return `
-    <div class="card card-clickable" data-ppt-id="${r.por_probar_tienda_id}">
+    <div class="card card-clickable ${r.destacado ? 'card-destacado' : ''}" data-ppt-id="${r.por_probar_tienda_id}">
       <div class="card-title-row">
         <div class="card-title">${escapeHtml(r.nombre_perfume)}</div>
         <button type="button" class="star-btn ${r.destacado ? 'active' : ''}" data-action="destacado" title="Destacar">${r.destacado ? '★' : '☆'}</button>

@@ -70,6 +70,12 @@ export const api = {
   volverAPorProbar: (args) => rpc('volver_a_por_probar', args),
   eliminarPendienteProbar: (p_pendiente_probar_id) => rpc('eliminar_pendiente_probar', { p_pendiente_probar_id }),
   editarPendienteProbar: (args) => rpc('editar_pendiente_probar', args),
+  marcarAgotadoGeneral: (p_pendiente_probar_id) => rpc('marcar_agotado_general', { p_pendiente_probar_id }),
+
+  listarAgotados: () => rpc('listar_agotados'),
+  editarAgotado: (args) => rpc('editar_agotado', args),
+  revisarAgotado: (args) => rpc('revisar_agotado', args),
+  eliminarAgotado: (p_agotado_id) => rpc('eliminar_agotado', { p_agotado_id }),
 
   deshacerMovimiento: (p_historial_id) => rpc('deshacer_movimiento', { p_historial_id }),
   listarMovimientosRecientes: () => rpc('listar_movimientos_recientes'),

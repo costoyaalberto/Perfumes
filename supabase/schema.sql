@@ -83,6 +83,19 @@ create table if not exists pendientes_probar (
   created_at timestamptz not null default now()
 );
 
+-- Perfumes que se buscaron en varias tiendas / el mercado en general y no
+-- aparecen en ninguna (a diferencia de pendientes_probar, que es "sin
+-- stock en ESTA tienda puntual"). No conviene revisarlos seguido, solo
+-- de vez en cuando (semanas), por eso van separados.
+create table if not exists agotados (
+  id uuid primary key default gen_random_uuid(),
+  nombre_perfume text not null,
+  referencia text,
+  comentario text,
+  fecha date not null default current_date,
+  created_at timestamptz not null default now()
+);
+
 -- Snapshot de un perfume justo antes de moverlo a coleccion / lista_negra /
 -- pendientes_compra, para poder deshacer el movimiento dentro de 48h.
 create table if not exists historial_movimientos (
@@ -128,6 +141,7 @@ alter table por_probar enable row level security;
 alter table por_probar_tienda enable row level security;
 alter table pendientes_compra enable row level security;
 alter table pendientes_probar enable row level security;
+alter table agotados enable row level security;
 alter table coleccion enable row level security;
 alter table lista_negra enable row level security;
 alter table historial_movimientos enable row level security;
@@ -135,7 +149,7 @@ alter table app_sessions enable row level security;
 alter table app_config enable row level security;
 
 revoke all on tiendas, por_probar, por_probar_tienda, pendientes_compra,
-  pendientes_probar, coleccion, lista_negra, historial_movimientos,
+  pendientes_probar, agotados, coleccion, lista_negra, historial_movimientos,
   app_sessions, app_config
   from anon, authenticated;
 
@@ -813,6 +827,100 @@ begin
 end;
 $$;
 
+-- Se buscó en varias tiendas / el mercado en general y no aparece en
+-- ninguna (a diferencia de "Sin stock", que es solo esta tienda puntual).
+-- Pasa de pendientes_probar a agotados.
+create or replace function public.marcar_agotado_general(p_token uuid, p_pendiente_probar_id uuid)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_row pendientes_probar;
+begin
+  perform check_token(p_token);
+  select * into v_row from pendientes_probar where id = p_pendiente_probar_id;
+  if v_row.id is null then
+    raise exception 'No se encontró el pendiente';
+  end if;
+
+  insert into agotados (nombre_perfume, referencia, comentario, fecha)
+    values (v_row.nombre_perfume, v_row.referencia, v_row.comentario, current_date);
+
+  delete from pendientes_probar where id = p_pendiente_probar_id;
+end;
+$$;
+
+create or replace function public.listar_agotados(p_token uuid)
+returns table (id uuid, nombre_perfume text, referencia text, comentario text, fecha date)
+language plpgsql security definer set search_path = public
+as $$
+begin
+  perform check_token(p_token);
+  return query
+    select a.id, a.nombre_perfume, a.referencia, a.comentario, a.fecha
+    from agotados a
+    order by a.fecha desc;
+end;
+$$;
+
+create or replace function public.editar_agotado(
+  p_token uuid, p_agotado_id uuid, p_nombre_perfume text, p_referencia text, p_comentario text
+)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+begin
+  perform check_token(p_token);
+  update agotados
+    set nombre_perfume = trim(p_nombre_perfume),
+        referencia = nullif(trim(coalesce(p_referencia, '')), ''),
+        comentario = p_comentario
+    where id = p_agotado_id;
+end;
+$$;
+
+-- Decidió revisarlo de nuevo: vuelve a por_probar en la tienda indicada.
+create or replace function public.revisar_agotado(
+  p_token uuid, p_agotado_id uuid, p_tienda_id uuid,
+  p_precio numeric, p_comentario text, p_disponibilidad text, p_modalidad text
+)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_row agotados;
+  v_id uuid;
+begin
+  perform check_token(p_token);
+  select * into v_row from agotados where id = p_agotado_id;
+  if v_row.id is null then
+    raise exception 'No se encontró el registro';
+  end if;
+
+  insert into por_probar (nombre_perfume, referencia)
+    values (v_row.nombre_perfume, v_row.referencia)
+    returning id into v_id;
+
+  insert into por_probar_tienda (por_probar_id, tienda_id, precio, comentario, disponibilidad, modalidad)
+    values (v_id, p_tienda_id, p_precio,
+            coalesce(nullif(p_comentario, ''), v_row.comentario),
+            coalesce(p_disponibilidad, 'con_probador'),
+            coalesce(p_modalidad, 'comprar_aqui'));
+
+  delete from agotados where id = p_agotado_id;
+end;
+$$;
+
+create or replace function public.eliminar_agotado(p_token uuid, p_agotado_id uuid)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+begin
+  perform check_token(p_token);
+  delete from agotados where id = p_agotado_id;
+end;
+$$;
+
 -- ---------------------------------------------------------------------
 -- 7. COLECCIÓN / LISTA NEGRA
 --    Mayormente de solo lectura desde la app, salvo eliminar_de_coleccion
@@ -1159,6 +1267,8 @@ revoke all on function
   public.editar_pendiente_compra, public.eliminar_pendiente_compra,
   public.listar_pendientes_probar, public.volver_a_por_probar, public.eliminar_pendiente_probar,
   public.editar_pendiente_probar,
+  public.marcar_agotado_general, public.listar_agotados, public.editar_agotado,
+  public.revisar_agotado, public.eliminar_agotado,
   public.listar_coleccion, public.eliminar_de_coleccion, public.listar_lista_negra,
   public.editar_lista_negra, public.eliminar_de_lista_negra,
   public.listar_candidatos_duplicado, public.exportar_datos, public.generar_reporte_seguimiento,
@@ -1193,6 +1303,11 @@ grant execute on function public.listar_pendientes_probar(uuid) to anon;
 grant execute on function public.volver_a_por_probar(uuid, uuid, uuid, numeric, text, text, text) to anon;
 grant execute on function public.eliminar_pendiente_probar(uuid, uuid) to anon;
 grant execute on function public.editar_pendiente_probar(uuid, uuid, text, text, text) to anon;
+grant execute on function public.marcar_agotado_general(uuid, uuid) to anon;
+grant execute on function public.listar_agotados(uuid) to anon;
+grant execute on function public.editar_agotado(uuid, uuid, text, text, text) to anon;
+grant execute on function public.revisar_agotado(uuid, uuid, uuid, numeric, text, text, text) to anon;
+grant execute on function public.eliminar_agotado(uuid, uuid) to anon;
 grant execute on function public.listar_coleccion(uuid) to anon;
 grant execute on function public.eliminar_de_coleccion(uuid, uuid) to anon;
 grant execute on function public.listar_lista_negra(uuid) to anon;

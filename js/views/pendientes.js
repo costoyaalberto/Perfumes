@@ -6,12 +6,15 @@ import { formatFecha, escapeHtml, normalizarNombre, toast } from '../utils.js';
 
 const content = document.getElementById('pendientes-content');
 const contentProbar = document.getElementById('pendientes-probar-content');
+const contentAgotados = document.getElementById('agotados-content');
 const contentMovimientos = document.getElementById('movimientos-content');
 const badge = document.getElementById('badge-pendientes');
 const searchInput = document.getElementById('buscar-pendientes');
 const searchInputProbar = document.getElementById('buscar-pendientes-probar');
+const searchInputAgotados = document.getElementById('buscar-agotados');
 let items = [];
 let itemsProbar = [];
+let itemsAgotados = [];
 let movimientos = [];
 
 const TIPO_LABEL = {
@@ -23,17 +26,21 @@ const TIPO_LABEL = {
 export async function render() {
   content.innerHTML = '<p class="empty-state">Cargando…</p>';
   contentProbar.innerHTML = '<p class="empty-state">Cargando…</p>';
+  contentAgotados.innerHTML = '<p class="empty-state">Cargando…</p>';
   contentMovimientos.innerHTML = '<p class="empty-state">Cargando…</p>';
   searchInput.value = '';
   searchInputProbar.value = '';
-  [items, itemsProbar, movimientos] = await Promise.all([
+  searchInputAgotados.value = '';
+  [items, itemsProbar, itemsAgotados, movimientos] = await Promise.all([
     api.listarPendientes(),
     api.listarPendientesProbar(),
+    api.listarAgotados(),
     api.listarMovimientosRecientes(),
   ]);
   updateBadge();
   drawPendientes();
   drawPendientesProbar();
+  drawAgotados();
 
   contentMovimientos.innerHTML = movimientos.length
     ? movimientos.map(movimientoHtml).join('')
@@ -56,8 +63,17 @@ function drawPendientesProbar() {
     : `<p class="empty-state">${itemsProbar.length ? 'Sin resultados.' : 'No tienes perfumes marcados como sin stock.'}</p>`;
 }
 
+function drawAgotados() {
+  const q = normalizarNombre(searchInputAgotados.value);
+  const list = q ? itemsAgotados.filter((p) => normalizarNombre(p.nombre_perfume).includes(q)) : itemsAgotados;
+  contentAgotados.innerHTML = list.length
+    ? list.map(cardHtmlAgotado).join('')
+    : `<p class="empty-state">${itemsAgotados.length ? 'Sin resultados.' : 'No tienes perfumes marcados como agotados en general.'}</p>`;
+}
+
 searchInput.addEventListener('input', drawPendientes);
 searchInputProbar.addEventListener('input', drawPendientesProbar);
+searchInputAgotados.addEventListener('input', drawAgotados);
 
 function movimientoHtml(m) {
   return `
@@ -124,7 +140,25 @@ function cardHtmlProbar(p) {
       ${p.comentario ? `<div class="card-comment">${escapeHtml(p.comentario)}</div>` : ''}
       <div class="card-actions">
         <button class="btn btn-success btn-sm" data-action="volvio">Ya volvió</button>
+        <button class="btn btn-outline btn-sm" data-action="agotado-general">Agotado en general</button>
         <button class="btn btn-danger btn-sm" data-action="eliminar-probar">Eliminar</button>
+      </div>
+    </div>
+  `;
+}
+
+function cardHtmlAgotado(p) {
+  return `
+    <div class="card card-clickable" data-id-agotado="${p.id}">
+      <div class="card-title">${escapeHtml(p.nombre_perfume)}</div>
+      ${p.referencia ? `<div class="card-ref">Ref: ${escapeHtml(p.referencia)}</div>` : ''}
+      <div class="card-meta">
+        <span class="chip chip-warn">Agotado desde ${formatFecha(p.fecha)}</span>
+      </div>
+      ${p.comentario ? `<div class="card-comment">${escapeHtml(p.comentario)}</div>` : ''}
+      <div class="card-actions">
+        <button class="btn btn-success btn-sm" data-action="revisar-agotado">Revisar de nuevo</button>
+        <button class="btn btn-danger btn-sm" data-action="eliminar-agotado">Eliminar</button>
       </div>
     </div>
   `;
@@ -154,11 +188,28 @@ contentProbar.addEventListener('click', async (e) => {
   const btn = e.target.closest('button[data-action]');
   if (btn) {
     if (btn.dataset.action === 'volvio') return handleVolvio(item);
+    if (btn.dataset.action === 'agotado-general') return handleAgotadoGeneral(item);
     if (btn.dataset.action === 'eliminar-probar') return handleEliminarProbar(item);
     return;
   }
 
   handleEditarPendienteProbar(item);
+});
+
+contentAgotados.addEventListener('click', async (e) => {
+  const card = e.target.closest('[data-id-agotado]');
+  if (!card) return;
+  const item = itemsAgotados.find((i) => i.id === card.dataset.idAgotado);
+  if (!item) return;
+
+  const btn = e.target.closest('button[data-action]');
+  if (btn) {
+    if (btn.dataset.action === 'revisar-agotado') return handleRevisarAgotado(item);
+    if (btn.dataset.action === 'eliminar-agotado') return handleEliminarAgotado(item);
+    return;
+  }
+
+  handleEditarAgotado(item);
 });
 
 async function handleYaLoCompre(item) {
@@ -366,6 +417,120 @@ async function handleEliminarProbar(item) {
   if (!ok) return;
   try {
     await api.eliminarPendienteProbar(item.id);
+    toast('Eliminado');
+    render();
+  } catch (err) {
+    toast('Error: ' + err.message, true);
+  }
+}
+
+async function handleAgotadoGeneral(item) {
+  const ok = await confirmDialog({
+    title: 'Agotado en general',
+    message: `¿"${escapeHtml(item.nombre_perfume)}" ya lo buscaste en varias tiendas y no aparece en ninguna? Se moverá a "Agotados" para revisarlo solo de vez en cuando.`,
+    confirmLabel: 'Marcar agotado',
+  });
+  if (!ok) return;
+  try {
+    await api.marcarAgotadoGeneral(item.id);
+    toast('Movido a Agotados');
+    render();
+  } catch (err) {
+    toast('Error: ' + err.message, true);
+  }
+}
+
+async function handleEditarAgotado(item) {
+  const el = openModal(`
+    <h3>Editar — Agotado</h3>
+    <form id="form-editar-agotado">
+      <div class="form-row">
+        <label>Nombre del perfume</label>
+        <input type="text" name="nombre" required value="${escapeHtml(item.nombre_perfume)}" />
+      </div>
+      <div class="form-row">
+        <label>Referencia / a qué imita</label>
+        <input type="text" name="referencia" value="${escapeHtml(item.referencia || '')}" />
+      </div>
+      <div class="form-row">
+        <label>Comentario</label>
+        <textarea name="comentario" rows="2">${escapeHtml(item.comentario || '')}</textarea>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" data-action="cancel">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Guardar</button>
+      </div>
+    </form>
+  `);
+  el.querySelector('[data-action="cancel"]').addEventListener('click', closeModal);
+  el.querySelector('#form-editar-agotado').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target);
+    try {
+      await api.editarAgotado({
+        p_agotado_id: item.id,
+        p_nombre_perfume: fd.get('nombre').trim(),
+        p_referencia: fd.get('referencia') || null,
+        p_comentario: fd.get('comentario') || null,
+      });
+      closeModal();
+      toast('Guardado');
+      render();
+    } catch (err) {
+      toast('Error: ' + err.message, true);
+    }
+  });
+}
+
+async function handleRevisarAgotado(item) {
+  const tiendas = (await getTiendas()).filter((t) => t.activa);
+  if (!tiendas.length) {
+    toast('Primero agrega al menos una tienda activa en la pestaña Tiendas', true);
+    return;
+  }
+  const el = openModal(`
+    <h3>Revisar de nuevo — ${escapeHtml(item.nombre_perfume)}</h3>
+    <p class="import-format">Vuelve a "Por Probar" en la tienda que elijas.</p>
+    <form id="form-revisar-agotado">
+      ${storeAndPriceFieldsHtml(tiendas, { comentario: item.comentario })}
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" data-action="cancel">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Volver a Por Probar</button>
+      </div>
+    </form>
+  `);
+  el.querySelector('[data-action="cancel"]').addEventListener('click', closeModal);
+  el.querySelector('#form-revisar-agotado').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target);
+    try {
+      await api.revisarAgotado({
+        p_agotado_id: item.id,
+        p_tienda_id: fd.get('tienda_id'),
+        p_precio: fd.get('precio') ? Number(fd.get('precio')) : null,
+        p_comentario: fd.get('comentario') || null,
+        p_disponibilidad: fd.get('disponibilidad'),
+        p_modalidad: fd.get('modalidad'),
+      });
+      closeModal();
+      toast('De vuelta en Por Probar');
+      render();
+    } catch (err) {
+      toast('Error: ' + err.message, true);
+    }
+  });
+}
+
+async function handleEliminarAgotado(item) {
+  const ok = await confirmDialog({
+    title: 'Eliminar definitivamente',
+    message: `¿Eliminar "${escapeHtml(item.nombre_perfume)}" de Agotados? Esta acción no se puede deshacer.`,
+    confirmLabel: 'Eliminar',
+    danger: true,
+  });
+  if (!ok) return;
+  try {
+    await api.eliminarAgotado(item.id);
     toast('Eliminado');
     render();
   } catch (err) {

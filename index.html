@@ -31,7 +31,7 @@
   <header class="topbar">
     <h1>🧴 Perfumes</h1>
     <div class="topbar-right">
-      <span class="version-tag">v8</span>
+      <span class="version-tag">v9</span>
       <button id="btn-logout" class="btn-icon" title="Cerrar sesión en este dispositivo">⏻</button>
     </div>
   </header>
@@ -68,6 +68,13 @@
       </div>
       <p class="import-format">Perfumes que estaban sin stock en todas las tiendas al momento de ir a buscarlos.</p>
       <div id="pendientes-probar-content" class="content"></div>
+
+      <div class="view-header" style="margin-top:24px;">
+        <h2>Agotados</h2>
+        <input id="buscar-agotados" class="search-input" type="search" placeholder="Buscar..." />
+      </div>
+      <p class="import-format">Se buscaron en varias tiendas / el mercado en general y no aparecen en ninguna. Revisar solo de vez en cuando.</p>
+      <div id="agotados-content" class="content"></div>
 
       <div class="view-header" style="margin-top:24px;"><h2>Movimientos recientes</h2></div>
       <p class="import-format">Últimas 48 horas. Por si cerraste la app antes de alcanzar a tocar "Deshacer" en el aviso.</p>
