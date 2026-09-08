@@ -15,6 +15,22 @@ let searchQuery = '';
 let onlySinProbador = false;
 let onlyDestacado = false;
 
+// Número asignado a cada por_probar_tienda_id la primera vez que aparece,
+// para que se mantenga fijo durante la sesión (mientras se va probando
+// físicamente en la tienda) aunque otras tarjetas se eliminen o se muevan.
+// Se reinicia solo al recargar la app (estado en memoria, no persiste).
+const numerosPorId = new Map();
+const proximoNumeroPorTienda = new Map();
+
+function asignarNumeros() {
+  for (const r of rows) {
+    if (numerosPorId.has(r.por_probar_tienda_id)) continue;
+    const num = (proximoNumeroPorTienda.get(r.tienda_nombre) || 0) + 1;
+    proximoNumeroPorTienda.set(r.tienda_nombre, num);
+    numerosPorId.set(r.por_probar_tienda_id, num);
+  }
+}
+
 export async function render() {
   content.innerHTML = '<p class="empty-state">Cargando…</p>';
   const [rowsResult, contadores] = await Promise.all([
@@ -22,6 +38,7 @@ export async function render() {
     api.obtenerContadores(),
   ]);
   rows = rowsResult;
+  asignarNumeros();
   actualizarContadores(contadores);
   draw();
 }
@@ -62,20 +79,21 @@ function draw() {
         <span>${escapeHtml(tienda)} <span style="font-weight:400;color:var(--muted);font-size:0.85rem;">(${items.length})</span></span>
         <span class="chevron">▾</span>
       </h3>
-      <div class="store-cards">${items.map((r, i) => cardHtml(r, i + 1)).join('')}</div>
+      <div class="store-cards">${items.map(cardHtml).join('')}</div>
     </div>
   `;
   }).join('');
   content.innerHTML = html;
 }
 
-function cardHtml(r, num) {
+function cardHtml(r) {
   const dispChip = r.disponibilidad === 'con_probador'
     ? '<span class="chip chip-ok">Con probador</span>'
     : '<span class="chip chip-warn">Sin probador</span>';
   const modChip = r.modalidad === 'comprar_aqui'
     ? '<span class="chip chip-buy">Comprar aquí</span>'
     : '<span class="chip chip-try">Solo probar</span>';
+  const num = numerosPorId.get(r.por_probar_tienda_id);
   return `
     <div class="card card-clickable ${r.destacado ? 'card-destacado' : ''}" data-ppt-id="${r.por_probar_tienda_id}">
       <div class="card-title-row">
