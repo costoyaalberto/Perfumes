@@ -62,14 +62,14 @@ function draw() {
         <span>${escapeHtml(tienda)} <span style="font-weight:400;color:var(--muted);font-size:0.85rem;">(${items.length})</span></span>
         <span class="chevron">▾</span>
       </h3>
-      <div class="store-cards">${items.map(cardHtml).join('')}</div>
+      <div class="store-cards">${items.map((r, i) => cardHtml(r, i + 1)).join('')}</div>
     </div>
   `;
   }).join('');
   content.innerHTML = html;
 }
 
-function cardHtml(r) {
+function cardHtml(r, num) {
   const dispChip = r.disponibilidad === 'con_probador'
     ? '<span class="chip chip-ok">Con probador</span>'
     : '<span class="chip chip-warn">Sin probador</span>';
@@ -79,7 +79,7 @@ function cardHtml(r) {
   return `
     <div class="card card-clickable ${r.destacado ? 'card-destacado' : ''}" data-ppt-id="${r.por_probar_tienda_id}">
       <div class="card-title-row">
-        <div class="card-title">${escapeHtml(r.nombre_perfume)}</div>
+        <div class="card-title"><span class="card-num">${num}</span>${escapeHtml(r.nombre_perfume)}</div>
         <button type="button" class="star-btn ${r.destacado ? 'active' : ''}" data-action="destacado" title="Destacar">${r.destacado ? '★' : '☆'}</button>
       </div>
       ${r.referencia ? `<div class="card-ref">Ref: ${escapeHtml(r.referencia)}</div>` : ''}
