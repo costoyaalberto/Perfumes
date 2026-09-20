@@ -97,4 +97,22 @@ no hay dónde anotarlo sin crear una tienda nueva de una sola vez.
 
 ---
 
+## 10. "Exportar tienda" — texto para pasarle a una IA antes de probar
+
+**Problema**: antes de ir a probar a una tienda, hoy se le pasa el
+contexto a una IA (para que sugiera en qué fijarse) usando screenshots
+de la app — funciona, pero es más incómodo que pasar texto plano.
+
+**Idea de solución**: botón "Exportar tienda" en la pestaña Datos, junto
+a los otros dos. Al tocarlo, pregunta qué tienda (de las tiendas
+activas), y arma un texto plano con los perfumes que están "Por Probar"
+en esa tienda y su información (nombre, referencia, precio, disponible
+con/sin probador, comentario) — mismo patrón que el reporte de
+novedades: modal con el texto y botón "Copiar". Mismo alcance que ese
+reporte: es una función de solo lectura, no cambia datos ni agrega
+tablas nuevas (reusa `listar_por_probar` filtrado por tienda, o una RPC
+liviana equivalente).
+
+---
+
 *(Agregar más ideas acá abajo a medida que surjan, en el mismo formato.)*
