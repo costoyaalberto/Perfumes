@@ -83,4 +83,18 @@ llena.
 
 ---
 
+## 9. Tienda "Otras" para perfumes encontrados fuera de las tiendas habituales
+
+**Problema**: a veces aparece un perfume en un lugar que no es ninguna
+de las tiendas ya cargadas (puesto ambulante, otra ciudad, etc.) y hoy
+no hay dónde anotarlo sin crear una tienda nueva de una sola vez.
+
+**Idea de solución** (a definir en detalle cuando se implemente):
+- Agregar una tienda especial "Otras" (fija, no editable/eliminable como
+  las demás) para usar en esos casos puntuales.
+- Revisar si conviene pedir un campo libre de texto (dónde exactamente)
+  cuando se elige "Otras", ya que agrupa lugares distintos entre sí.
+
+---
+
 *(Agregar más ideas acá abajo a medida que surjan, en el mismo formato.)*
