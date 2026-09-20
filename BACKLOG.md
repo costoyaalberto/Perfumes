@@ -115,4 +115,32 @@ liviana equivalente).
 
 ---
 
+## 11. Mostrar "Pendientes de Compra" también en la lista de su tienda (Por Probar)
+
+**Problema**: un perfume que pasó a "Pendientes de Compra" tiene una
+tienda asignada (dónde comprarlo), pero hoy solo aparece en la pestaña
+Pendientes. Si en una visita a esa tienda no se entra a esa pestaña,
+es fácil recorrer todo "Por Probar", probar todo y salir sin comprar el
+que ya estaba decidido, porque no aparece en el lugar donde de verdad se
+está mirando en ese momento.
+
+**Idea de solución** (a definir en detalle cuando se implemente):
+- En la vista "Por Probar", dentro del grupo de la tienda que
+  corresponda, mostrar también los perfumes que están en "Pendientes de
+  Compra" con esa misma tienda asignada — enmarcados con un color
+  distintivo para que salten a la vista.
+- Ojo: el dorado ya está tomado por "destacados" (item 8) — hay que
+  elegir otro color para no confundir ambos casos (por ejemplo el
+  morado de marca, o un verde/azul que no choque con los chips
+  existentes).
+- Definir si esa tarjeta ahí es solo informativa (clickeable → lleva a
+  editar/gestionar en Pendientes de Compra) o si conviene una acción
+  rápida tipo "Ya lo compré" directamente ahí mismo, para no tener que
+  cambiar de pestaña.
+- No implica cambio de modelo de datos (pendientes_compra ya guarda
+  tienda_id) — es una consulta que junta ambas listas para pintarlas
+  juntas por tienda.
+
+---
+
 *(Agregar más ideas acá abajo a medida que surjan, en el mismo formato.)*
