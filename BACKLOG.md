@@ -143,4 +143,20 @@ está mirando en ese momento.
 
 ---
 
+## 12. El buscador de "Por Probar" debería buscar también en "referencia"
+
+**Problema**: el buscador de "Por Probar" solo filtra por el nombre del
+perfume. Muchas veces lo que importa comparar es a qué perfume original
+imita (campo "referencia"), no el nombre del dupe en sí — dos perfumes
+de nombres distintos pueden estar inspirados en el mismo original. Hoy
+no hay forma de buscar por eso, lo que puede llevar a comprar un dupe
+sin darse cuenta de que ya hay otro en la lista que imita lo mismo.
+
+**Idea de solución**: que el filtro de búsqueda de "Por Probar" matchee
+tanto contra `nombre_perfume` como contra `referencia` (mismo criterio
+de normalización que ya usa `normalizarNombre` para el nombre). Cambio
+acotado a `js/views/porProbar.js`, sin tocar esquema ni RPCs.
+
+---
+
 *(Agregar más ideas acá abajo a medida que surjan, en el mismo formato.)*
