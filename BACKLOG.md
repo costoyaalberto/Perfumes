@@ -130,34 +130,20 @@ quedado afuera al agregar la columna).
 
 ---
 
-## 13. Completar referencias faltantes en Colección/Lista Negra con ayuda de una IA
+## ~~13. Completar referencias faltantes en Colección/Lista Negra con ayuda de una IA~~ — Hecho (v14)
 
-**Problema**: los perfumes cargados antes de que existiera el campo
-"referencia" (o importados sin ese dato) no tienen esa información, y
-cargarla a mano uno por uno es lento. La idea es exportar esos casos,
-pedirle a una IA que investigue a qué perfume imita cada uno, y subir
-el resultado de vuelta a la app.
-
-**Idea de solución (recomendada)**:
-- **Exportar**: botón "🔍 Exportar referencias faltantes" en la pestaña
-  Datos. Genera un texto de solo lectura (modal + botón "Copiar", mismo
-  patrón que el reporte de novedades) con los perfumes de Colección que
-  tienen `referencia` vacía, una línea por perfume en formato
-  `id|nombre_perfume`. Se usa el `id` (no solo el nombre) porque el
-  nombre no es único — puede haber más de una compra del mismo dupe — y
-  así el reimport no actualiza la fila equivocada.
-- **Reimportar**: nueva sección en Datos con una caja de texto donde se
-  pega lo que devuelva la IA en formato `id|referencia` (una línea por
-  perfume), y un botón que actualiza *solo* el campo `referencia` de esas
-  filas ya existentes por id. Es una operación distinta a los imports
-  masivos que ya existen (esos crean filas nuevas; esto actualiza filas
-  existentes) — necesita una RPC nueva por tabla, tipo
-  `actualizar_referencias_coleccion(p_token, p_items jsonb)`, que valide
-  cada id y reporte errores por línea igual que los imports actuales.
-- Aplica a **Colección** y, desde que el item 12 agregó la columna
-  `referencia` a **Lista Negra** también, se puede replicar la misma
-  exportación/reimportación ahí (RPC `actualizar_referencias_lista_negra`
-  equivalente).
+Implementado para ambas listas en un solo flujo: botón "🧬 Exportar
+referencias faltantes" en Datos genera un texto (con instrucciones para
+la IA incluidas) con los perfumes de Colección y Lista Negra que tienen
+`referencia` vacía, identificados por `id` y separados en dos secciones
+(`# COLECCION` / `# LISTA_NEGRA`). Ese mismo texto se pega en una IA, y
+su respuesta se pega de vuelta en la nueva sección "Actualizar
+referencias" (debajo de los botones de Datos, antes de "Importar
+datos"), que reconoce a qué tabla pertenece cada línea por la sección y
+actualiza solo el campo `referencia` de esas filas ya existentes (RPCs
+`actualizar_referencias_coleccion` / `actualizar_referencias_lista_negra`).
+El parseo es tolerante: ignora texto suelto que la IA agregue y omite
+(sin error) las líneas donde respondió "?" por no estar segura.
 
 ---
 

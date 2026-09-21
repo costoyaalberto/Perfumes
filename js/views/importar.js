@@ -4,6 +4,7 @@ import { openModal, closeModal } from '../modal.js';
 import { parseDelimitado, normalizarNombre, escapeHtml, formatCLP, toast } from '../utils.js';
 
 const content = document.getElementById('importar-content');
+const actualizarRefContent = document.getElementById('actualizar-referencias-content');
 let initialized = false;
 
 document.getElementById('btn-exportar').addEventListener('click', async () => {
@@ -112,6 +113,60 @@ function buildExportTiendaTexto(tiendaNombre, rows) {
   return `Perfumes "Por Probar" en "${tiendaNombre}" (${rows.length}):\n\n${lineas.join('\n\n')}`;
 }
 
+document.getElementById('btn-exportar-referencias').addEventListener('click', async () => {
+  try {
+    const [coleccion, listaNegra] = await Promise.all([
+      api.listarColeccion(),
+      api.listarListaNegra(),
+    ]);
+    const faltanColeccion = coleccion.filter((p) => !p.referencia);
+    const faltanListaNegra = listaNegra.filter((p) => !p.referencia);
+    const total = faltanColeccion.length + faltanListaNegra.length;
+    if (!total) {
+      toast('No hay perfumes con referencia faltante 🎉');
+      return;
+    }
+    const texto = buildExportReferenciasTexto(faltanColeccion, faltanListaNegra);
+    mostrarExportReferencias(texto, total);
+  } catch (err) {
+    toast('Error: ' + err.message, true);
+  }
+});
+
+function buildExportReferenciasTexto(coleccion, listaNegra) {
+  const lineas = (list) => (list.length ? list.map((p) => `${p.id}|${p.nombre_perfume}`).join('\n') : '(ninguno)');
+  return `Para cada perfume de la lista de abajo, identifica a qué perfume original está inspirado (el perfume "de diseñador" que imita o del que es "dupe"). Devuélveme exactamente la misma lista completa (mismas líneas, mismo orden, sin agregar ni quitar ninguna), agregando al final de cada línea " | " seguido del nombre del perfume original que identificaste. No cambies el ID. Si no puedes identificarlo con confianza, escribe "?" en vez de inventar uno. Mantén las líneas que empiezan con "#" tal cual.
+
+# COLECCION
+${lineas(coleccion)}
+
+# LISTA_NEGRA
+${lineas(listaNegra)}`;
+}
+
+function mostrarExportReferencias(texto, total) {
+  const el = openModal(`
+    <h3>Exportar referencias faltantes</h3>
+    <p class="import-format">${total} perfume(s) sin referencia. Pega este texto en una IA y después pega su respuesta en "Actualizar referencias", más abajo en esta misma pestaña.</p>
+    <textarea id="export-referencias-texto" rows="14" readonly
+      style="width:100%; font-family:ui-monospace,monospace; font-size:0.8rem; white-space:pre-wrap;">${escapeHtml(texto)}</textarea>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" data-action="cerrar">Cerrar</button>
+      <button type="button" class="btn btn-primary" data-action="copiar">Copiar</button>
+    </div>
+  `);
+  el.querySelector('[data-action="cerrar"]').addEventListener('click', closeModal);
+  el.querySelector('[data-action="copiar"]').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(texto);
+      toast('Copiado al portapapeles');
+    } catch (err) {
+      el.querySelector('#export-referencias-texto').select();
+      toast('No se pudo copiar automático — seleccionamos el texto, cópialo con Ctrl/Cmd+C', true);
+    }
+  });
+}
+
 function mostrarExportTienda(tiendaNombre, texto) {
   const el = openModal(`
     <h3>Exportar — ${escapeHtml(tiendaNombre)}</h3>
@@ -156,6 +211,91 @@ export async function render() {
   wireSection('coleccion', importarColeccion);
   wireSection('lista-negra', importarListaNegra);
   wireSection('por-probar', importarPorProbar);
+
+  initActualizarReferencias();
+}
+
+function initActualizarReferencias() {
+  actualizarRefContent.innerHTML = `
+    <div class="import-section">
+      <div class="import-format">
+        Pega acá la respuesta completa que te dio la IA a partir del texto de
+        "🧬 Exportar referencias faltantes" (con las líneas <code># COLECCION</code>
+        / <code># LISTA_NEGRA</code> tal cual se las mandaste). Solo actualiza el
+        campo referencia de perfumes que ya existen — no crea perfumes nuevos.
+      </div>
+      <textarea class="import-textarea" data-role="textarea" placeholder="Pega aquí la respuesta de la IA..."></textarea>
+      <div style="margin-top:8px;">
+        <button class="btn btn-primary btn-block" data-role="actualizar">Actualizar referencias</button>
+      </div>
+      <div class="import-result" data-role="resultado"></div>
+    </div>
+  `;
+
+  const textarea = actualizarRefContent.querySelector('[data-role="textarea"]');
+  const btn = actualizarRefContent.querySelector('[data-role="actualizar"]');
+  const resultado = actualizarRefContent.querySelector('[data-role="resultado"]');
+
+  btn.addEventListener('click', async () => {
+    if (!textarea.value.trim()) {
+      resultado.innerHTML = '<span class="line-error">Pega el texto con las referencias antes de actualizar.</span>';
+      return;
+    }
+    const { coleccion, listaNegra, omitidas } = parseActualizarReferencias(textarea.value);
+    if (!coleccion.length && !listaNegra.length) {
+      resultado.innerHTML = '<span class="line-error">No se encontró ninguna línea con formato "id|referencia" válido.</span>';
+      return;
+    }
+    btn.disabled = true;
+    resultado.textContent = 'Actualizando…';
+    try {
+      const [okColeccion, okListaNegra] = await Promise.all([
+        coleccion.length ? api.actualizarReferenciasColeccion(coleccion) : Promise.resolve(0),
+        listaNegra.length ? api.actualizarReferenciasListaNegra(listaNegra) : Promise.resolve(0),
+      ]);
+      let html = `✅ ${okColeccion} referencia(s) actualizadas en Colección y ${okListaNegra} en Lista Negra.`;
+      if (omitidas > 0) {
+        html += `<br/>${omitidas} línea(s) sin referencia identificada (la IA respondió "?" o no la incluyó) — se omitieron.`;
+      }
+      resultado.innerHTML = html;
+      textarea.value = '';
+      toast('Referencias actualizadas');
+    } catch (err) {
+      resultado.innerHTML = `<span class="line-error">Error: ${escapeHtml(err.message)}</span>`;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function parseActualizarReferencias(texto) {
+  const coleccion = [];
+  const listaNegra = [];
+  let omitidas = 0;
+  let seccion = 'coleccion';
+  for (const rawLinea of (texto || '').split('\n')) {
+    const linea = rawLinea.trim();
+    if (!linea) continue;
+    if (/^#?\s*COLECCION\b/i.test(linea)) { seccion = 'coleccion'; continue; }
+    if (/^#?\s*LISTA_?NEGRA\b/i.test(linea)) { seccion = 'listaNegra'; continue; }
+    if (linea.startsWith('#')) continue;
+
+    const campos = linea.split('|').map((c) => c.trim());
+    if (!UUID_RE.test(campos[0])) continue; // no es una línea de datos (instrucciones, texto suelto de la IA, etc.)
+
+    const referencia = campos[campos.length - 1];
+    if (campos.length < 2 || !referencia || referencia === '?') {
+      omitidas++;
+      continue;
+    }
+
+    const item = { id: campos[0], referencia };
+    if (seccion === 'listaNegra') listaNegra.push(item);
+    else coleccion.push(item);
+  }
+  return { coleccion, listaNegra, omitidas };
 }
 
 function section(id, title, formato, ejemplo) {

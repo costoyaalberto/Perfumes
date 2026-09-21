@@ -1228,6 +1228,44 @@ begin
 end;
 $$;
 
+-- p_items: [{ id, referencia }, ...] — actualiza SOLO el campo referencia
+-- de filas ya existentes (a diferencia de importar_*, que crea filas
+-- nuevas). Pensado para completar con ayuda de una IA las referencias
+-- que quedaron vacías en perfumes cargados antes de tener ese campo.
+create or replace function public.actualizar_referencias_coleccion(p_token uuid, p_items jsonb)
+returns int
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_count int := 0;
+begin
+  perform check_token(p_token);
+  update coleccion c
+    set referencia = nullif(trim(item->>'referencia'), '')
+  from jsonb_array_elements(p_items) as item
+  where c.id = (item->>'id')::uuid;
+  get diagnostics v_count = row_count;
+  return v_count;
+end;
+$$;
+
+create or replace function public.actualizar_referencias_lista_negra(p_token uuid, p_items jsonb)
+returns int
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_count int := 0;
+begin
+  perform check_token(p_token);
+  update lista_negra ln
+    set referencia = nullif(trim(item->>'referencia'), '')
+  from jsonb_array_elements(p_items) as item
+  where ln.id = (item->>'id')::uuid;
+  get diagnostics v_count = row_count;
+  return v_count;
+end;
+$$;
+
 -- items: [{ nombre_perfume, referencia, tiendas: [{tienda_id, precio, comentario, disponibilidad, modalidad}, ...] }]
 create or replace function public.importar_por_probar(p_token uuid, p_items jsonb)
 returns int
@@ -1283,7 +1321,8 @@ revoke all on function
   public.listar_coleccion, public.eliminar_de_coleccion, public.listar_lista_negra,
   public.editar_lista_negra, public.eliminar_de_lista_negra,
   public.listar_candidatos_duplicado, public.exportar_datos, public.generar_reporte_seguimiento,
-  public.importar_coleccion, public.importar_lista_negra, public.importar_por_probar
+  public.importar_coleccion, public.importar_lista_negra, public.importar_por_probar,
+  public.actualizar_referencias_coleccion, public.actualizar_referencias_lista_negra
   from public;
 
 grant execute on function public.validar_pin(text) to anon;
@@ -1329,6 +1368,8 @@ grant execute on function public.generar_reporte_seguimiento(uuid, int) to anon;
 grant execute on function public.importar_coleccion(uuid, jsonb) to anon;
 grant execute on function public.importar_lista_negra(uuid, jsonb) to anon;
 grant execute on function public.importar_por_probar(uuid, jsonb) to anon;
+grant execute on function public.actualizar_referencias_coleccion(uuid, jsonb) to anon;
+grant execute on function public.actualizar_referencias_lista_negra(uuid, jsonb) to anon;
 
 -- check_token y armar_snapshot_por_probar se llaman solo internamente
 -- desde otras funciones security definer; no necesitan ejecutarse desde

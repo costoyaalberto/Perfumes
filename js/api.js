@@ -94,4 +94,7 @@ export const api = {
   importarColeccion: (p_items) => rpc('importar_coleccion', { p_items }),
   importarListaNegra: (p_items) => rpc('importar_lista_negra', { p_items }),
   importarPorProbar: (p_items) => rpc('importar_por_probar', { p_items }),
+
+  actualizarReferenciasColeccion: (p_items) => rpc('actualizar_referencias_coleccion', { p_items }),
+  actualizarReferenciasListaNegra: (p_items) => rpc('actualizar_referencias_lista_negra', { p_items }),
 };
