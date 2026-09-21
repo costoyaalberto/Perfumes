@@ -171,4 +171,35 @@ original, y hoy eso se pierde fácil al comparar solo por nombre.
 
 ---
 
+## 13. Completar referencias faltantes en Colección/Lista Negra con ayuda de una IA
+
+**Problema**: los perfumes cargados antes de que existiera el campo
+"referencia" (o importados sin ese dato) no tienen esa información, y
+cargarla a mano uno por uno es lento. La idea es exportar esos casos,
+pedirle a una IA que investigue a qué perfume imita cada uno, y subir
+el resultado de vuelta a la app.
+
+**Idea de solución (recomendada)**:
+- **Exportar**: botón "🔍 Exportar referencias faltantes" en la pestaña
+  Datos. Genera un texto de solo lectura (modal + botón "Copiar", mismo
+  patrón que el reporte de novedades) con los perfumes de Colección que
+  tienen `referencia` vacía, una línea por perfume en formato
+  `id|nombre_perfume`. Se usa el `id` (no solo el nombre) porque el
+  nombre no es único — puede haber más de una compra del mismo dupe — y
+  así el reimport no actualiza la fila equivocada.
+- **Reimportar**: nueva sección en Datos con una caja de texto donde se
+  pega lo que devuelva la IA en formato `id|referencia` (una línea por
+  perfume), y un botón que actualiza *solo* el campo `referencia` de esas
+  filas ya existentes por id. Es una operación distinta a los imports
+  masivos que ya existen (esos crean filas nuevas; esto actualiza filas
+  existentes) — necesita una RPC nueva por tabla, tipo
+  `actualizar_referencias_coleccion(p_token, p_items jsonb)`, que valide
+  cada id y reporte errores por línea igual que los imports actuales.
+- Aplica directo a **Colección** (ya tiene el campo `referencia`).
+  Para **Lista Negra** queda bloqueado hasta resolver el item 12 (esa
+  tabla no tiene columna `referencia` todavía) — si se decide agregarla,
+  esta misma exportación/reimportación se puede replicar ahí.
+
+---
+
 *(Agregar más ideas acá abajo a medida que surjan, en el mismo formato.)*
