@@ -143,19 +143,31 @@ está mirando en ese momento.
 
 ---
 
-## 12. El buscador de "Por Probar" debería buscar también en "referencia"
+## 12. Buscar también por "referencia" (perfume que se imita), en todas las listas
 
-**Problema**: el buscador de "Por Probar" solo filtra por el nombre del
-perfume. Muchas veces lo que importa comparar es a qué perfume original
-imita (campo "referencia"), no el nombre del dupe en sí — dos perfumes
-de nombres distintos pueden estar inspirados en el mismo original. Hoy
-no hay forma de buscar por eso, lo que puede llevar a comprar un dupe
-sin darse cuenta de que ya hay otro en la lista que imita lo mismo.
+**Problema**: al encontrar un perfume inspirado en algo, sirve poder
+buscar por ese "algo" (campo "referencia") para ver si ya hay otro en
+la lista que imite lo mismo — no solo buscar por el nombre del dupe.
+Dos perfumes de nombres distintos pueden estar inspirados en el mismo
+original, y hoy eso se pierde fácil al comparar solo por nombre.
 
-**Idea de solución**: que el filtro de búsqueda de "Por Probar" matchee
-tanto contra `nombre_perfume` como contra `referencia` (mismo criterio
-de normalización que ya usa `normalizarNombre` para el nombre). Cambio
-acotado a `js/views/porProbar.js`, sin tocar esquema ni RPCs.
+**Estado real por vista (revisado)**:
+- **Por Probar**: el buscador solo filtra por `nombre_perfume`. Falta
+  agregar `referencia` al filtro (mismo criterio de normalización que
+  ya usa `normalizarNombre`). Cambio acotado a `js/views/porProbar.js`,
+  sin tocar esquema ni RPCs.
+- **Colección**: ya busca por `nombre_perfume` **y** `referencia` desde
+  siempre — no hace falta ningún cambio acá.
+- **Lista Negra**: la tabla `lista_negra` **no tiene campo `referencia`**
+  (solo `nombre_perfume`, `motivo`, `comentario`, `tienda_probada_id`,
+  `fecha`) — no es un simple ajuste de búsqueda como en las otras dos.
+  Para poder buscar por perfume de referencia acá primero habría que:
+  agregar la columna `referencia` a la tabla, actualizar
+  `listar_lista_negra`/`editar_lista_negra`/`importar_lista_negra` para
+  incluirla, agregar el campo al modal de editar y al formato de
+  importación, y recién ahí sumarla al buscador. Definir si vale la
+  pena para Lista Negra (quizás no aplica tanto ahí, ya que un perfume
+  descartado no suele compararse por a qué imita).
 
 ---
 
