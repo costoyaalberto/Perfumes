@@ -1,4 +1,8 @@
-const CACHE_NAME = 'perfumes-tracker-v1';
+// IMPORTANTE: subir este número en cada versión (junto con el .version-tag
+// de index.html). Si el archivo no cambia de bytes, el navegador nunca
+// detecta que hay un service worker nuevo y sigue sirviendo la caché vieja
+// para siempre, sin importar cuántas veces se recargue la página.
+const CACHE_NAME = 'perfumes-tracker-v13';
 const APP_SHELL = [
   './',
   './index.html',
