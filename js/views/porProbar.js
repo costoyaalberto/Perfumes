@@ -10,6 +10,7 @@ const btnFiltroSinProbador = document.getElementById('btn-filtro-sin-probador');
 const btnFiltroDestacado = document.getElementById('btn-filtro-destacado');
 
 let rows = [];
+let pendientesCompra = [];
 const collapsedTiendas = new Set();
 let searchQuery = '';
 let onlySinProbador = false;
@@ -33,11 +34,13 @@ function asignarNumeros() {
 
 export async function render() {
   content.innerHTML = '<p class="empty-state">Cargando…</p>';
-  const [rowsResult, contadores] = await Promise.all([
+  const [rowsResult, contadores, pendientesResult] = await Promise.all([
     api.listarPorProbar(),
     api.obtenerContadores(),
+    api.listarPendientes(),
   ]);
   rows = rowsResult;
+  pendientesCompra = pendientesResult;
   asignarNumeros();
   actualizarContadores(contadores);
   draw();
@@ -51,7 +54,7 @@ function actualizarContadores(contadores) {
 }
 
 function draw() {
-  if (!rows.length) {
+  if (!rows.length && !pendientesCompra.length) {
     content.innerHTML = '<p class="empty-state">No tienes perfumes por probar todavía. Toca "+ Nuevo" para agregar uno.</p>';
     return;
   }
@@ -59,27 +62,37 @@ function draw() {
   let filtered = rows;
   if (onlySinProbador) filtered = filtered.filter((r) => r.disponibilidad === 'sin_probador');
   if (onlyDestacado) filtered = filtered.filter((r) => r.destacado);
-  if (q) filtered = filtered.filter((r) => normalizarNombre(r.nombre_perfume).includes(q));
-
-  if (!filtered.length) {
-    content.innerHTML = '<p class="empty-state">Sin resultados con ese filtro.</p>';
-    return;
+  if (q) {
+    filtered = filtered.filter((r) => normalizarNombre(r.nombre_perfume).includes(q) || normalizarNombre(r.referencia || '').includes(q));
   }
 
   const grupos = new Map();
   for (const r of filtered) {
-    if (!grupos.has(r.tienda_nombre)) grupos.set(r.tienda_nombre, []);
-    grupos.get(r.tienda_nombre).push(r);
+    if (!grupos.has(r.tienda_nombre)) grupos.set(r.tienda_nombre, { probar: [], pendientes: [] });
+    grupos.get(r.tienda_nombre).probar.push(r);
   }
-  const html = [...grupos.entries()].map(([tienda, items]) => {
+  // Los pendientes de compra se muestran siempre (no se filtran por búsqueda
+  // ni por los toggles) para que el recordatorio no se pierda al filtrar.
+  for (const p of pendientesCompra) {
+    if (!p.tienda_nombre) continue;
+    if (!grupos.has(p.tienda_nombre)) grupos.set(p.tienda_nombre, { probar: [], pendientes: [] });
+    grupos.get(p.tienda_nombre).pendientes.push(p);
+  }
+
+  if (!grupos.size) {
+    content.innerHTML = '<p class="empty-state">Sin resultados con ese filtro.</p>';
+    return;
+  }
+
+  const html = [...grupos.entries()].map(([tienda, { probar, pendientes }]) => {
     const collapsed = collapsedTiendas.has(tienda);
     return `
     <div class="store-group ${collapsed ? 'collapsed' : ''}" data-tienda="${escapeHtml(tienda)}">
       <h3>
-        <span>${escapeHtml(tienda)} <span style="font-weight:400;color:var(--muted);font-size:0.85rem;">(${items.length})</span></span>
+        <span>${escapeHtml(tienda)} <span style="font-weight:400;color:var(--muted);font-size:0.85rem;">(${probar.length})</span></span>
         <span class="chevron">▾</span>
       </h3>
-      <div class="store-cards">${items.map(cardHtml).join('')}</div>
+      <div class="store-cards">${pendientes.map(cardHtmlPendienteCompra).join('')}${probar.map(cardHtml).join('')}</div>
     </div>
   `;
   }).join('');
@@ -117,8 +130,28 @@ function cardHtml(r) {
   `;
 }
 
+function cardHtmlPendienteCompra(p) {
+  return `
+    <div class="card card-pendiente-compra" data-id-pendiente="${p.id}">
+      <div class="card-title">🛒 ${escapeHtml(p.nombre_perfume)}</div>
+      ${p.referencia ? `<div class="card-ref">Ref: ${escapeHtml(p.referencia)}</div>` : ''}
+      <div class="card-meta">
+        <span class="chip chip-pendiente">Pendiente de compra</span>
+      </div>
+      ${p.comentario ? `<div class="card-comment">${escapeHtml(p.comentario)}</div>` : ''}
+      <div class="card-actions">
+        <button class="btn btn-success btn-sm" data-action="ya-lo-compre">Ya lo compré</button>
+      </div>
+    </div>
+  `;
+}
+
 function findRow(pptId) {
   return rows.find((r) => r.por_probar_tienda_id === pptId);
+}
+
+function findPendiente(id) {
+  return pendientesCompra.find((p) => p.id === id);
 }
 
 searchInput.addEventListener('input', () => {
@@ -146,6 +179,15 @@ content.addEventListener('click', async (e) => {
     if (collapsedTiendas.has(tienda)) collapsedTiendas.delete(tienda);
     else collapsedTiendas.add(tienda);
     group.classList.toggle('collapsed');
+    return;
+  }
+
+  const pendienteCard = e.target.closest('[data-id-pendiente]');
+  if (pendienteCard) {
+    const btn = e.target.closest('button[data-action="ya-lo-compre"]');
+    if (!btn) return;
+    const item = findPendiente(pendienteCard.dataset.idPendiente);
+    if (item) handleYaLoCompre(item, render);
     return;
   }
 
@@ -645,6 +687,55 @@ async function reopenNuevoPerfumeModal(nombre, fd) {
       closeModal();
       toast('Perfume agregado');
       render();
+    } catch (err) {
+      toast('Error: ' + err.message, true);
+    }
+  });
+}
+
+// Compartido con pendientes.js (Pendientes de Compra) — recibe onDone en vez
+// de llamar a un render() fijo, porque puede dispararse desde esa vista o
+// desde acá (tarjeta "Pendiente de compra" dentro de Por Probar).
+export async function handleYaLoCompre(item, onDone) {
+  const tiendas = await getTiendas();
+  const el = openModal(`
+    <h3>Ya lo compré — ${escapeHtml(item.nombre_perfume)}</h3>
+    <form id="form-ya-lo-compre">
+      <div class="form-row">
+        <label>¿Dónde lo compraste?</label>
+        <select name="tienda_id">
+          <option value="">Otro / tienda online (especifica abajo)</option>
+          ${tiendas.map((t) => `<option value="${t.id}">${escapeHtml(t.nombre)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-row">
+        <label>Canal (si no es una tienda del catálogo)</label>
+        <input type="text" name="canal_compra" placeholder="Ej: AliExpress, Falabella online..." value="${escapeHtml(item.donde_comprar || '')}" />
+      </div>
+      <div class="form-row">
+        <label>Precio</label>
+        <input type="number" name="precio" min="0" step="1" required />
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" data-action="cancel">Cancelar</button>
+        <button type="submit" class="btn btn-success">Mover a Colección</button>
+      </div>
+    </form>
+  `);
+  el.querySelector('[data-action="cancel"]').addEventListener('click', closeModal);
+  el.querySelector('#form-ya-lo-compre').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target);
+    try {
+      await api.yaLoCompre({
+        p_pendiente_id: item.id,
+        p_tienda_compra_id: fd.get('tienda_id') || null,
+        p_canal_compra: fd.get('canal_compra') || null,
+        p_precio: Number(fd.get('precio')),
+      });
+      closeModal();
+      toast('Movido a Colección 🎉');
+      onDone();
     } catch (err) {
       toast('Error: ' + err.message, true);
     }

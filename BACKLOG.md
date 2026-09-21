@@ -83,91 +83,50 @@ llena.
 
 ---
 
-## 9. Tienda "Otras" para perfumes encontrados fuera de las tiendas habituales
+## ~~9. Tienda "Otras" para perfumes encontrados fuera de las tiendas habituales~~ — Hecho (v12)
 
-**Problema**: a veces aparece un perfume en un lugar que no es ninguna
-de las tiendas ya cargadas (puesto ambulante, otra ciudad, etc.) y hoy
-no hay dónde anotarlo sin crear una tienda nueva de una sola vez.
-
-**Idea de solución** (a definir en detalle cuando se implemente):
-- Agregar una tienda especial "Otras" (fija, no editable/eliminable como
-  las demás) para usar en esos casos puntuales.
-- Revisar si conviene pedir un campo libre de texto (dónde exactamente)
-  cuando se elige "Otras", ya que agrupa lugares distintos entre sí.
+Implementado en su versión más simple (decidida al implementar): tienda
+"Otras" sembrada por el script de esquema, sin ningún tratamiento
+especial — es una tienda normal más, editable/eliminable como cualquier
+otra desde la pestaña Tiendas. El detalle de dónde exactamente se
+encontró el perfume se anota en el comentario de cada perfume, como ya
+se podía hacer.
 
 ---
 
-## 10. "Exportar tienda" — texto para pasarle a una IA antes de probar
+## ~~10. "Exportar tienda" — texto para pasarle a una IA antes de probar~~ — Hecho (v12)
 
-**Problema**: antes de ir a probar a una tienda, hoy se le pasa el
-contexto a una IA (para que sugiera en qué fijarse) usando screenshots
-de la app — funciona, pero es más incómodo que pasar texto plano.
-
-**Idea de solución**: botón "Exportar tienda" en la pestaña Datos, junto
-a los otros dos. Al tocarlo, pregunta qué tienda (de las tiendas
-activas), y arma un texto plano con los perfumes que están "Por Probar"
-en esa tienda y su información (nombre, referencia, precio, disponible
-con/sin probador, comentario) — mismo patrón que el reporte de
-novedades: modal con el texto y botón "Copiar". Mismo alcance que ese
-reporte: es una función de solo lectura, no cambia datos ni agrega
-tablas nuevas (reusa `listar_por_probar` filtrado por tienda, o una RPC
-liviana equivalente).
+Implementado tal cual estaba pensado: botón "🔍 Exportar tienda" en la
+pestaña Datos, pide qué tienda (de las activas), y arma un texto con
+los perfumes "Por Probar" de esa tienda (nombre, referencia, precio,
+disponibilidad, modalidad, comentario) en un modal con botón "Copiar".
+Sin RPC nueva — reusa `listar_por_probar` filtrado en el cliente.
 
 ---
 
-## 11. Mostrar "Pendientes de Compra" también en la lista de su tienda (Por Probar)
+## ~~11. Mostrar "Pendientes de Compra" también en la lista de su tienda (Por Probar)~~ — Hecho (v12)
 
-**Problema**: un perfume que pasó a "Pendientes de Compra" tiene una
-tienda asignada (dónde comprarlo), pero hoy solo aparece en la pestaña
-Pendientes. Si en una visita a esa tienda no se entra a esa pestaña,
-es fácil recorrer todo "Por Probar", probar todo y salir sin comprar el
-que ya estaba decidido, porque no aparece en el lugar donde de verdad se
-está mirando en ese momento.
-
-**Idea de solución** (a definir en detalle cuando se implemente):
-- En la vista "Por Probar", dentro del grupo de la tienda que
-  corresponda, mostrar también los perfumes que están en "Pendientes de
-  Compra" con esa misma tienda asignada — enmarcados con un color
-  distintivo para que salten a la vista.
-- Ojo: el dorado ya está tomado por "destacados" (item 8) — hay que
-  elegir otro color para no confundir ambos casos (por ejemplo el
-  morado de marca, o un verde/azul que no choque con los chips
-  existentes).
-- Definir si esa tarjeta ahí es solo informativa (clickeable → lleva a
-  editar/gestionar en Pendientes de Compra) o si conviene una acción
-  rápida tipo "Ya lo compré" directamente ahí mismo, para no tener que
-  cambiar de pestaña.
-- No implica cambio de modelo de datos (pendientes_compra ya guarda
-  tienda_id) — es una consulta que junta ambas listas para pintarlas
-  juntas por tienda.
+Implementado: dentro de cada grupo de tienda en "Por Probar" aparecen
+también los perfumes que están en "Pendientes de Compra" con esa misma
+tienda (la tienda donde se probó), con borde y fondo celeste/azul
+(`#3b82f6`, distinto del dorado de "destacados") y chip "Pendiente de
+compra". Decisiones tomadas: esa tarjeta es solo el botón "Ya lo
+compré" (sin click para editar — para eso está la pestaña Pendientes),
+y se muestra siempre ahí, sin verse afectada por la búsqueda ni los
+filtros de "Por Probar", para que el recordatorio no se pierda.
 
 ---
 
-## 12. Buscar también por "referencia" (perfume que se imita), en todas las listas
+## ~~12. Buscar también por "referencia" (perfume que se imita), en todas las listas~~ — Hecho (v12)
 
-**Problema**: al encontrar un perfume inspirado en algo, sirve poder
-buscar por ese "algo" (campo "referencia") para ver si ya hay otro en
-la lista que imite lo mismo — no solo buscar por el nombre del dupe.
-Dos perfumes de nombres distintos pueden estar inspirados en el mismo
-original, y hoy eso se pierde fácil al comparar solo por nombre.
-
-**Estado real por vista (revisado)**:
-- **Por Probar**: el buscador solo filtra por `nombre_perfume`. Falta
-  agregar `referencia` al filtro (mismo criterio de normalización que
-  ya usa `normalizarNombre`). Cambio acotado a `js/views/porProbar.js`,
-  sin tocar esquema ni RPCs.
-- **Colección**: ya busca por `nombre_perfume` **y** `referencia` desde
-  siempre — no hace falta ningún cambio acá.
-- **Lista Negra**: la tabla `lista_negra` **no tiene campo `referencia`**
-  (solo `nombre_perfume`, `motivo`, `comentario`, `tienda_probada_id`,
-  `fecha`) — no es un simple ajuste de búsqueda como en las otras dos.
-  Para poder buscar por perfume de referencia acá primero habría que:
-  agregar la columna `referencia` a la tabla, actualizar
-  `listar_lista_negra`/`editar_lista_negra`/`importar_lista_negra` para
-  incluirla, agregar el campo al modal de editar y al formato de
-  importación, y recién ahí sumarla al buscador. Definir si vale la
-  pena para Lista Negra (quizás no aplica tanto ahí, ya que un perfume
-  descartado no suele compararse por a qué imita).
+Implementado en las tres vistas: "Por Probar" ahora busca por nombre y
+referencia (Colección ya lo hacía). Para Lista Negra se decidió agregar
+la columna `referencia` a la tabla (antes no existía) — se sumó a
+`listar_lista_negra`, `editar_lista_negra`, `importar_lista_negra`, al
+modal de editar, al formato de importación, al buscador, y de paso se
+completó `no_me_gusto` y `exportar_datos` para que la referencia del
+perfume rechazado se traspase automáticamente a Lista Negra (se había
+quedado afuera al agregar la columna).
 
 ---
 
@@ -195,10 +154,10 @@ el resultado de vuelta a la app.
   existentes) — necesita una RPC nueva por tabla, tipo
   `actualizar_referencias_coleccion(p_token, p_items jsonb)`, que valide
   cada id y reporte errores por línea igual que los imports actuales.
-- Aplica directo a **Colección** (ya tiene el campo `referencia`).
-  Para **Lista Negra** queda bloqueado hasta resolver el item 12 (esa
-  tabla no tiene columna `referencia` todavía) — si se decide agregarla,
-  esta misma exportación/reimportación se puede replicar ahí.
+- Aplica a **Colección** y, desde que el item 12 agregó la columna
+  `referencia` a **Lista Negra** también, se puede replicar la misma
+  exportación/reimportación ahí (RPC `actualizar_referencias_lista_negra`
+  equivalente).
 
 ---
 

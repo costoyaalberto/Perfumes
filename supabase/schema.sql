@@ -127,6 +127,12 @@ create table if not exists app_config (
 
 alter table por_probar add column if not exists destacado boolean not null default false;
 alter table pendientes_compra add column if not exists donde_comprar text;
+alter table lista_negra add column if not exists referencia text;
+
+-- Tienda fija para perfumes encontrados fuera de las tiendas habituales
+-- (puesto ambulante, otra ciudad, etc.) — se anota el detalle en el
+-- comentario de cada perfume, no requiere lógica especial aparte.
+insert into tiendas (nombre) values ('Otras') on conflict (nombre) do nothing;
 
 -- ---------------------------------------------------------------------
 -- 2. BLOQUEO DE ACCESO DIRECTO
@@ -471,6 +477,7 @@ declare
   v_por_probar_id uuid;
   v_tienda_id uuid;
   v_nombre text;
+  v_referencia text;
   v_comentario text;
   v_destino_id uuid;
   v_historial_id uuid;
@@ -478,8 +485,8 @@ declare
 begin
   perform check_token(p_token);
 
-  select ppt.por_probar_id, ppt.tienda_id, pp.nombre_perfume, ppt.comentario
-    into v_por_probar_id, v_tienda_id, v_nombre, v_comentario
+  select ppt.por_probar_id, ppt.tienda_id, pp.nombre_perfume, pp.referencia, ppt.comentario
+    into v_por_probar_id, v_tienda_id, v_nombre, v_referencia, v_comentario
   from por_probar_tienda ppt
   join por_probar pp on pp.id = ppt.por_probar_id
   where ppt.id = p_por_probar_tienda_id;
@@ -494,8 +501,8 @@ begin
 
   v_snapshot := armar_snapshot_por_probar(v_por_probar_id);
 
-  insert into lista_negra (nombre_perfume, motivo, tienda_probada_id, comentario, fecha)
-    values (v_nombre, trim(p_motivo), v_tienda_id, v_comentario, current_date)
+  insert into lista_negra (nombre_perfume, referencia, motivo, tienda_probada_id, comentario, fecha)
+    values (v_nombre, v_referencia, trim(p_motivo), v_tienda_id, v_comentario, current_date)
     returning id into v_destino_id;
 
   insert into historial_movimientos (tipo, snapshot, destino_id)
@@ -959,9 +966,10 @@ begin
 end;
 $$;
 
+drop function if exists public.listar_lista_negra(uuid);
 create or replace function public.listar_lista_negra(p_token uuid)
 returns table (
-  id uuid, nombre_perfume text, motivo text, comentario text,
+  id uuid, nombre_perfume text, referencia text, motivo text, comentario text,
   tienda_probada_id uuid, tienda_nombre text, fecha date
 )
 language plpgsql security definer set search_path = public
@@ -969,7 +977,7 @@ as $$
 begin
   perform check_token(p_token);
   return query
-    select ln.id, ln.nombre_perfume, ln.motivo, ln.comentario,
+    select ln.id, ln.nombre_perfume, ln.referencia, ln.motivo, ln.comentario,
            ln.tienda_probada_id, t.nombre, ln.fecha
     from lista_negra ln
     left join tiendas t on t.id = ln.tienda_probada_id
@@ -977,9 +985,10 @@ begin
 end;
 $$;
 
--- Edita nombre/motivo/comentario (ej. para corregir errores de carga).
+-- Edita nombre/referencia/motivo/comentario (ej. para corregir errores de carga).
+drop function if exists public.editar_lista_negra(uuid, uuid, text, text, text);
 create or replace function public.editar_lista_negra(
-  p_token uuid, p_lista_negra_id uuid, p_nombre_perfume text, p_motivo text, p_comentario text
+  p_token uuid, p_lista_negra_id uuid, p_nombre_perfume text, p_referencia text, p_motivo text, p_comentario text
 )
 returns void
 language plpgsql security definer set search_path = public
@@ -991,6 +1000,7 @@ begin
   end if;
   update lista_negra
     set nombre_perfume = trim(p_nombre_perfume),
+        referencia = nullif(trim(coalesce(p_referencia, '')), ''),
         motivo = trim(p_motivo),
         comentario = p_comentario
     where id = p_lista_negra_id;
@@ -1097,7 +1107,7 @@ begin
     'lista_negra', (
       select coalesce(jsonb_agg(row_to_json(x) order by x.nombre_perfume), '[]'::jsonb)
       from (
-        select ln.id, ln.nombre_perfume, ln.motivo, ln.comentario, ln.fecha,
+        select ln.id, ln.nombre_perfume, ln.referencia, ln.motivo, ln.comentario, ln.fecha,
                t.nombre as tienda_nombre
         from lista_negra ln left join tiendas t on t.id = ln.tienda_probada_id
       ) x
@@ -1204,9 +1214,10 @@ declare
   v_count int := 0;
 begin
   perform check_token(p_token);
-  insert into lista_negra (nombre_perfume, motivo, tienda_probada_id, comentario, fecha)
+  insert into lista_negra (nombre_perfume, referencia, motivo, tienda_probada_id, comentario, fecha)
   select
     item->>'nombre_perfume',
+    nullif(item->>'referencia', ''),
     coalesce(nullif(item->>'motivo', ''), 'Sin especificar'),
     nullif(item->>'tienda_probada_id', '')::uuid,
     nullif(item->>'comentario', ''),
@@ -1311,7 +1322,7 @@ grant execute on function public.eliminar_agotado(uuid, uuid) to anon;
 grant execute on function public.listar_coleccion(uuid) to anon;
 grant execute on function public.eliminar_de_coleccion(uuid, uuid) to anon;
 grant execute on function public.listar_lista_negra(uuid) to anon;
-grant execute on function public.editar_lista_negra(uuid, uuid, text, text, text) to anon;
+grant execute on function public.editar_lista_negra(uuid, uuid, text, text, text, text) to anon;
 grant execute on function public.eliminar_de_lista_negra(uuid, uuid) to anon;
 grant execute on function public.listar_candidatos_duplicado(uuid) to anon;
 grant execute on function public.generar_reporte_seguimiento(uuid, int) to anon;

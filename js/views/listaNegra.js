@@ -18,7 +18,7 @@ export async function render() {
 function currentFiltered() {
   const q = normalizarNombre(searchInput.value);
   let list = items;
-  if (q) list = list.filter((p) => normalizarNombre(p.nombre_perfume).includes(q));
+  if (q) list = list.filter((p) => normalizarNombre(p.nombre_perfume).includes(q) || normalizarNombre(p.referencia || '').includes(q));
   list = [...list];
   if (sortMode === 'fecha') {
     list.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
@@ -40,6 +40,7 @@ function draw(list) {
   content.innerHTML = list.map((p) => `
     <div class="card card-clickable" data-id="${p.id}">
       <div class="card-title">${escapeHtml(p.nombre_perfume)}</div>
+      ${p.referencia ? `<div class="card-ref">Ref: ${escapeHtml(p.referencia)}</div>` : ''}
       <div class="card-meta">
         <span class="chip chip-warn">${escapeHtml(p.tienda_nombre || '—')}</span>
         <span class="chip chip-price">${formatFecha(p.fecha)}</span>
@@ -73,6 +74,10 @@ async function handleEditar(item) {
       <div class="form-row">
         <label>Nombre del perfume</label>
         <input type="text" name="nombre" required value="${escapeHtml(item.nombre_perfume)}" />
+      </div>
+      <div class="form-row">
+        <label>Referencia / a qué imita</label>
+        <input type="text" name="referencia" value="${escapeHtml(item.referencia || '')}" />
       </div>
       <div class="form-row">
         <label>Motivo (obligatorio)</label>
@@ -118,6 +123,7 @@ async function handleEditar(item) {
       await api.editarListaNegra({
         p_lista_negra_id: item.id,
         p_nombre_perfume: fd.get('nombre').trim(),
+        p_referencia: fd.get('referencia') || null,
         p_motivo: motivo,
         p_comentario: fd.get('comentario') || null,
       });

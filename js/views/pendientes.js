@@ -1,7 +1,7 @@
 import { api } from '../api.js';
 import { getTiendas } from '../store.js';
 import { openModal, closeModal, confirmDialog } from '../modal.js';
-import { storeAndPriceFieldsHtml } from './porProbar.js';
+import { storeAndPriceFieldsHtml, handleYaLoCompre } from './porProbar.js';
 import { formatFecha, escapeHtml, normalizarNombre, toast } from '../utils.js';
 
 const content = document.getElementById('pendientes-content');
@@ -172,7 +172,7 @@ content.addEventListener('click', async (e) => {
 
   const btn = e.target.closest('button[data-action]');
   if (btn) {
-    if (btn.dataset.action === 'ya-lo-compre') return handleYaLoCompre(item);
+    if (btn.dataset.action === 'ya-lo-compre') return handleYaLoCompre(item, render);
     return;
   }
 
@@ -211,52 +211,6 @@ contentAgotados.addEventListener('click', async (e) => {
 
   handleEditarAgotado(item);
 });
-
-async function handleYaLoCompre(item) {
-  const tiendas = await getTiendas();
-  const el = openModal(`
-    <h3>Ya lo compré — ${escapeHtml(item.nombre_perfume)}</h3>
-    <form id="form-ya-lo-compre">
-      <div class="form-row">
-        <label>¿Dónde lo compraste?</label>
-        <select name="tienda_id">
-          <option value="">Otro / tienda online (especifica abajo)</option>
-          ${tiendas.map((t) => `<option value="${t.id}">${escapeHtml(t.nombre)}</option>`).join('')}
-        </select>
-      </div>
-      <div class="form-row">
-        <label>Canal (si no es una tienda del catálogo)</label>
-        <input type="text" name="canal_compra" placeholder="Ej: AliExpress, Falabella online..." value="${escapeHtml(item.donde_comprar || '')}" />
-      </div>
-      <div class="form-row">
-        <label>Precio</label>
-        <input type="number" name="precio" min="0" step="1" required />
-      </div>
-      <div class="modal-actions">
-        <button type="button" class="btn btn-secondary" data-action="cancel">Cancelar</button>
-        <button type="submit" class="btn btn-success">Mover a Colección</button>
-      </div>
-    </form>
-  `);
-  el.querySelector('[data-action="cancel"]').addEventListener('click', closeModal);
-  el.querySelector('#form-ya-lo-compre').addEventListener('submit', async (ev) => {
-    ev.preventDefault();
-    const fd = new FormData(ev.target);
-    try {
-      await api.yaLoCompre({
-        p_pendiente_id: item.id,
-        p_tienda_compra_id: fd.get('tienda_id') || null,
-        p_canal_compra: fd.get('canal_compra') || null,
-        p_precio: Number(fd.get('precio')),
-      });
-      closeModal();
-      toast('Movido a Colección 🎉');
-      render();
-    } catch (err) {
-      toast('Error: ' + err.message, true);
-    }
-  });
-}
 
 async function handleEditarPendienteCompra(item) {
   const el = openModal(`
