@@ -73,10 +73,13 @@ function draw() {
   }
   // Los pendientes de compra se muestran siempre (no se filtran por búsqueda
   // ni por los toggles) para que el recordatorio no se pierda al filtrar.
+  // Van agrupados por donde_comprar_tienda_nombre (dónde se PIENSA comprar),
+  // no por tienda_nombre (esa es donde solo se pudo probar, nunca comprar —
+  // por eso el perfume terminó acá en vez de ir directo a Colección).
   for (const p of pendientesCompra) {
-    if (!p.tienda_nombre) continue;
-    if (!grupos.has(p.tienda_nombre)) grupos.set(p.tienda_nombre, { probar: [], pendientes: [] });
-    grupos.get(p.tienda_nombre).pendientes.push(p);
+    if (!p.donde_comprar_tienda_nombre) continue;
+    if (!grupos.has(p.donde_comprar_tienda_nombre)) grupos.set(p.donde_comprar_tienda_nombre, { probar: [], pendientes: [] });
+    grupos.get(p.donde_comprar_tienda_nombre).pendientes.push(p);
   }
 
   if (!grupos.size) {
@@ -384,6 +387,7 @@ async function handleSinProbador(row) {
 
 async function handleMeGusto(row) {
   const esCompra = row.modalidad === 'comprar_aqui';
+  const tiendas = esCompra ? [] : await getTiendas();
   const el = openModal(`
     <h3>Me gustó — ${escapeHtml(row.nombre_perfume)}</h3>
     ${esCompra
@@ -398,11 +402,18 @@ async function handleMeGusto(row) {
              <button type="submit" class="btn btn-success">Mover a Colección</button>
            </div>
          </form>`
-      : `<p>Se moverá a <strong>Pendientes de Compra</strong> (modalidad "solo probar").</p>
+      : `<p>Se moverá a <strong>Pendientes de Compra</strong> (modalidad "solo probar" en ${escapeHtml(row.tienda_nombre)}, no se puede comprar ahí).</p>
          <form id="form-me-gusto-pendiente">
            <div class="form-row">
              <label>¿Dónde piensas comprarlo? (opcional, se puede editar después)</label>
-             <input type="text" name="donde_comprar" placeholder="Ej: Tienda X, Online, Falabella..." />
+             <select name="donde_comprar_tienda_id">
+               <option value="">Otro / tienda online (especifica abajo)</option>
+               ${tiendas.map((t) => `<option value="${t.id}">${escapeHtml(t.nombre)}</option>`).join('')}
+             </select>
+           </div>
+           <div class="form-row">
+             <label>Canal (si no es una tienda del catálogo)</label>
+             <input type="text" name="donde_comprar" placeholder="Ej: AliExpress, Falabella online..." />
            </div>
            <div class="modal-actions">
              <button type="button" class="btn btn-secondary" data-action="cancel">Cancelar</button>
@@ -416,7 +427,7 @@ async function handleMeGusto(row) {
       ev.preventDefault();
       const precio = Number(new FormData(ev.target).get('precio'));
       try {
-        const historialId = await api.meGusto(row.por_probar_tienda_id, precio, null);
+        const historialId = await api.meGusto(row.por_probar_tienda_id, precio, null, null);
         closeModal();
         avisarConDeshacer('Movido a Colección 🎉', historialId);
         render();
@@ -427,9 +438,9 @@ async function handleMeGusto(row) {
   } else {
     el.querySelector('#form-me-gusto-pendiente').addEventListener('submit', async (ev) => {
       ev.preventDefault();
-      const dondeComprar = new FormData(ev.target).get('donde_comprar');
+      const fd = new FormData(ev.target);
       try {
-        const historialId = await api.meGusto(row.por_probar_tienda_id, null, dondeComprar || null);
+        const historialId = await api.meGusto(row.por_probar_tienda_id, null, fd.get('donde_comprar') || null, fd.get('donde_comprar_tienda_id') || null);
         closeModal();
         avisarConDeshacer('Movido a Pendientes de Compra', historialId);
         render();
@@ -705,7 +716,7 @@ export async function handleYaLoCompre(item, onDone) {
         <label>¿Dónde lo compraste?</label>
         <select name="tienda_id">
           <option value="">Otro / tienda online (especifica abajo)</option>
-          ${tiendas.map((t) => `<option value="${t.id}">${escapeHtml(t.nombre)}</option>`).join('')}
+          ${tiendas.map((t) => `<option value="${t.id}" ${t.id === item.donde_comprar_tienda_id ? 'selected' : ''}>${escapeHtml(t.nombre)}</option>`).join('')}
         </select>
       </div>
       <div class="form-row">

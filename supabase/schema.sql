@@ -134,6 +134,23 @@ alter table lista_negra add column if not exists referencia text;
 -- comentario de cada perfume, no requiere lógica especial aparte.
 insert into tiendas (nombre) values ('Otras') on conflict (nombre) do nothing;
 
+-- tienda_probada_id de pendientes_compra es SIEMPRE la tienda donde el
+-- perfume era "solo probar" (no se podía comprar ahí, por eso pasó a
+-- pendiente en vez de ir directo a Colección) — nunca la tienda donde se
+-- planea comprarlo. donde_comprar_tienda_id es un campo aparte, real
+-- (FK), opcional, para cuando esa tienda de compra sí es del catálogo;
+-- donde_comprar (texto libre) sigue existiendo para "Online", "Otro", etc.
+alter table pendientes_compra add column if not exists donde_comprar_tienda_id uuid references tiendas(id);
+
+-- Si alguien ya había escrito el nombre exacto de una tienda del catálogo
+-- en el texto libre donde_comprar, lo enlazamos automáticamente.
+update pendientes_compra pc
+set donde_comprar_tienda_id = t.id
+from tiendas t
+where pc.donde_comprar_tienda_id is null
+  and pc.donde_comprar is not null
+  and lower(trim(pc.donde_comprar)) = lower(trim(t.nombre));
+
 -- ---------------------------------------------------------------------
 -- 2. BLOQUEO DE ACCESO DIRECTO
 --    RLS activado y SIN políticas para anon/authenticated en ninguna
@@ -418,8 +435,10 @@ $$;
 -- acción. Guarda un snapshot en historial_movimientos y retorna su id para
 -- que el frontend pueda ofrecer "Deshacer".
 drop function if exists public.me_gusto(uuid, uuid, numeric);
+drop function if exists public.me_gusto(uuid, uuid, numeric, text);
 create or replace function public.me_gusto(
-  p_token uuid, p_por_probar_tienda_id uuid, p_precio_final numeric, p_donde_comprar text default null
+  p_token uuid, p_por_probar_tienda_id uuid, p_precio_final numeric, p_donde_comprar text default null,
+  p_donde_comprar_tienda_id uuid default null
 )
 returns uuid
 language plpgsql security definer set search_path = public
@@ -456,8 +475,8 @@ begin
     insert into historial_movimientos (tipo, snapshot, destino_id)
       values ('compra', v_snapshot, v_destino_id) returning id into v_historial_id;
   else
-    insert into pendientes_compra (nombre_perfume, referencia, comentario, tienda_probada_id, fecha_prueba, donde_comprar)
-      values (v_nombre, v_referencia, v_comentario, v_tienda_id, current_date, nullif(trim(coalesce(p_donde_comprar, '')), ''))
+    insert into pendientes_compra (nombre_perfume, referencia, comentario, tienda_probada_id, fecha_prueba, donde_comprar, donde_comprar_tienda_id)
+      values (v_nombre, v_referencia, v_comentario, v_tienda_id, current_date, nullif(trim(coalesce(p_donde_comprar, '')), ''), p_donde_comprar_tienda_id)
       returning id into v_destino_id;
     insert into historial_movimientos (tipo, snapshot, destino_id)
       values ('pendiente_compra', v_snapshot, v_destino_id) returning id into v_historial_id;
@@ -680,12 +699,14 @@ $$;
 -- 6. PENDIENTES DE COMPRA
 -- ---------------------------------------------------------------------
 
--- drop porque cambia la forma de la tabla retornada (se agregó "donde_comprar")
+-- drop porque cambia la forma de la tabla retornada (se agregaron
+-- "donde_comprar" y "donde_comprar_tienda_id"/"donde_comprar_tienda_nombre")
 drop function if exists public.listar_pendientes_compra(uuid);
 create or replace function public.listar_pendientes_compra(p_token uuid)
 returns table (
   id uuid, nombre_perfume text, referencia text, comentario text,
-  tienda_probada_id uuid, tienda_nombre text, fecha_prueba date, donde_comprar text
+  tienda_probada_id uuid, tienda_nombre text, fecha_prueba date, donde_comprar text,
+  donde_comprar_tienda_id uuid, donde_comprar_tienda_nombre text
 )
 language plpgsql security definer set search_path = public
 as $$
@@ -693,18 +714,23 @@ begin
   perform check_token(p_token);
   return query
     select pc.id, pc.nombre_perfume, pc.referencia, pc.comentario,
-           pc.tienda_probada_id, t.nombre, pc.fecha_prueba, pc.donde_comprar
+           pc.tienda_probada_id, t.nombre, pc.fecha_prueba, pc.donde_comprar,
+           pc.donde_comprar_tienda_id, tc.nombre
     from pendientes_compra pc
     left join tiendas t on t.id = pc.tienda_probada_id
+    left join tiendas tc on tc.id = pc.donde_comprar_tienda_id
     order by pc.fecha_prueba desc;
 end;
 $$;
 
--- Edita nombre/referencia/comentario y dónde se piensa comprar (texto
--- libre: tienda del catálogo o cualquier otro canal).
+-- Edita nombre/referencia/comentario y dónde se piensa comprar: tienda del
+-- catálogo (donde_comprar_tienda_id) y/o texto libre (donde_comprar, para
+-- "Online", "Otro", etc.) — independiente de tienda_probada_id, que es la
+-- tienda donde el perfume era "solo probar" (no la de compra).
+drop function if exists public.editar_pendiente_compra(uuid, uuid, text, text, text, text);
 create or replace function public.editar_pendiente_compra(
   p_token uuid, p_pendiente_id uuid, p_nombre_perfume text, p_referencia text,
-  p_comentario text, p_donde_comprar text
+  p_comentario text, p_donde_comprar text, p_donde_comprar_tienda_id uuid default null
 )
 returns void
 language plpgsql security definer set search_path = public
@@ -715,7 +741,8 @@ begin
     set nombre_perfume = trim(p_nombre_perfume),
         referencia = nullif(trim(p_referencia), ''),
         comentario = p_comentario,
-        donde_comprar = nullif(trim(coalesce(p_donde_comprar, '')), '')
+        donde_comprar = nullif(trim(coalesce(p_donde_comprar, '')), ''),
+        donde_comprar_tienda_id = p_donde_comprar_tienda_id
     where id = p_pendiente_id;
 end;
 $$;
@@ -1084,8 +1111,10 @@ begin
       select coalesce(jsonb_agg(row_to_json(x) order by x.fecha_prueba desc), '[]'::jsonb)
       from (
         select pc.id, pc.nombre_perfume, pc.referencia, pc.comentario, pc.fecha_prueba,
-               t.nombre as tienda_nombre
-        from pendientes_compra pc left join tiendas t on t.id = pc.tienda_probada_id
+               t.nombre as tienda_nombre, pc.donde_comprar, tc.nombre as donde_comprar_tienda_nombre
+        from pendientes_compra pc
+          left join tiendas t on t.id = pc.tienda_probada_id
+          left join tiendas tc on tc.id = pc.donde_comprar_tienda_id
       ) x
     ),
     'pendientes_probar', (
@@ -1334,7 +1363,7 @@ grant execute on function public.listar_por_probar(uuid) to anon;
 grant execute on function public.crear_por_probar(uuid, text, text, uuid, numeric, text, text, text) to anon;
 grant execute on function public.agregar_tienda_a_por_probar(uuid, uuid, uuid, numeric, text, text, text) to anon;
 grant execute on function public.marcar_sin_probador(uuid, uuid) to anon;
-grant execute on function public.me_gusto(uuid, uuid, numeric, text) to anon;
+grant execute on function public.me_gusto(uuid, uuid, numeric, text, uuid) to anon;
 grant execute on function public.no_me_gusto(uuid, uuid, text) to anon;
 grant execute on function public.editar_por_probar(uuid, uuid, text, text, numeric, text, text, text) to anon;
 grant execute on function public.eliminar_por_probar_tienda(uuid, uuid) to anon;
@@ -1346,7 +1375,7 @@ grant execute on function public.deshacer_movimiento(uuid, uuid) to anon;
 grant execute on function public.listar_movimientos_recientes(uuid) to anon;
 grant execute on function public.exportar_datos(uuid) to anon;
 grant execute on function public.listar_pendientes_compra(uuid) to anon;
-grant execute on function public.editar_pendiente_compra(uuid, uuid, text, text, text, text) to anon;
+grant execute on function public.editar_pendiente_compra(uuid, uuid, text, text, text, text, uuid) to anon;
 grant execute on function public.eliminar_pendiente_compra(uuid, uuid) to anon;
 grant execute on function public.ya_lo_compre(uuid, uuid, uuid, text, numeric) to anon;
 grant execute on function public.listar_pendientes_probar(uuid) to anon;

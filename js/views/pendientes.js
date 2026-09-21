@@ -115,7 +115,7 @@ function cardHtml(p) {
     <div class="card card-clickable" data-id="${p.id}">
       <div class="card-title">${escapeHtml(p.nombre_perfume)}</div>
       ${p.referencia ? `<div class="card-ref">Ref: ${escapeHtml(p.referencia)}</div>` : ''}
-      <div class="card-store-line">🛒 Comprar en: <strong>${escapeHtml(p.donde_comprar || 'Sin definir (toca para editar)')}</strong></div>
+      <div class="card-store-line">🛒 Comprar en: <strong>${escapeHtml(p.donde_comprar_tienda_nombre || p.donde_comprar || 'Sin definir (toca para editar)')}</strong></div>
       <div class="card-meta">
         <span class="chip chip-try">Probado en ${escapeHtml(p.tienda_nombre || '—')}</span>
         <span class="chip chip-price">${formatFecha(p.fecha_prueba)}</span>
@@ -213,6 +213,7 @@ contentAgotados.addEventListener('click', async (e) => {
 });
 
 async function handleEditarPendienteCompra(item) {
+  const tiendas = await getTiendas();
   const el = openModal(`
     <h3>Editar pendiente de compra</h3>
     <form id="form-editar-pendiente">
@@ -226,7 +227,14 @@ async function handleEditarPendienteCompra(item) {
       </div>
       <div class="form-row">
         <label>¿Dónde piensas comprarlo?</label>
-        <input type="text" name="donde_comprar" placeholder="Ej: Tienda X, Online, Falabella..." value="${escapeHtml(item.donde_comprar || '')}" />
+        <select name="donde_comprar_tienda_id">
+          <option value="">Otro / tienda online (especifica abajo)</option>
+          ${tiendas.map((t) => `<option value="${t.id}" ${t.id === item.donde_comprar_tienda_id ? 'selected' : ''}>${escapeHtml(t.nombre)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-row">
+        <label>Canal (si no es una tienda del catálogo)</label>
+        <input type="text" name="donde_comprar" placeholder="Ej: AliExpress, Falabella online..." value="${escapeHtml(item.donde_comprar || '')}" />
       </div>
       <div class="form-row">
         <label>Comentario</label>
@@ -269,6 +277,7 @@ async function handleEditarPendienteCompra(item) {
         p_referencia: fd.get('referencia') || null,
         p_comentario: fd.get('comentario') || null,
         p_donde_comprar: fd.get('donde_comprar') || null,
+        p_donde_comprar_tienda_id: fd.get('donde_comprar_tienda_id') || null,
       });
       closeModal();
       toast('Guardado');
