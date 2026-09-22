@@ -162,4 +162,30 @@ sin tocar esquema ni RPCs.
 
 ---
 
+## 15. Campo "Prioridad" en Por Probar, y ordenar las tarjetas por eso
+
+**Problema**: al investigar un perfume con otra IA, la respuesta trae
+una línea tipo `Para ti: gusto 9/10 | espacio 8/10 | potencia 7/10 |
+prioridad 8.5/10`. Hoy ese dato de prioridad no tiene dónde guardarse,
+y las tarjetas de cada tienda se ven en orden alfabético — no por qué
+tan recomendable es probarlo primero.
+
+**Idea de solución** (a definir en detalle cuando se implemente):
+- Nuevo campo `prioridad` (numérico, 0-10 con un decimal, opcional) en
+  `por_probar` — es una propiedad del perfume en sí (como `referencia`),
+  no de la tienda, ya que la evaluación de la IA es sobre el perfume,
+  no sobre dónde comprarlo.
+- Se carga a mano (el usuario copia el 8.5 del texto que le devuelve la
+  IA) al crear o editar el perfume — no se intenta parsear el texto
+  completo de la IA automáticamente.
+- Mostrar la prioridad como chip en la tarjeta (ej. "⭐ 8.5").
+- Dentro de cada grupo de tienda, ordenar las tarjetas de mayor a menor
+  prioridad (hoy es alfabético por nombre). Los perfumes sin prioridad
+  cargada van al final del grupo.
+- Ojo con la numeración fija de tarjetas (item de v10/v11): al cambiar
+  el orden de aparición, revisar que timing de asignación de números
+  siga siendo estable durante la sesión.
+
+---
+
 *(Agregar más ideas acá abajo a medida que surjan, en el mismo formato.)*
