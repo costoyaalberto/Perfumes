@@ -147,4 +147,19 @@ El parseo es tolerante: ignora texto suelto que la IA agregue y omite
 
 ---
 
+## 14. Botón para contraer todas las tiendas en "Por Probar"
+
+**Problema**: cada grupo de tienda en "Por Probar" se puede contraer
+tocando su encabezado, pero hoy hay que hacerlo tienda por tienda a
+mano cada vez.
+
+**Idea de solución**: un botón (en el `filter-row`, junto a los demás
+filtros) que contraiga todos los grupos de una sola vez — y
+probablemente conviene que el mismo botón alterne para expandir todos
+de nuevo. Cambio acotado a `js/views/porProbar.js` (ya existe
+`collapsedTiendas`, el Set que trackea qué tiendas están contraídas),
+sin tocar esquema ni RPCs.
+
+---
+
 *(Agregar más ideas acá abajo a medida que surjan, en el mismo formato.)*
