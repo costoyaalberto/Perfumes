@@ -210,4 +210,20 @@ tester.
 
 ---
 
+## 17. Exportar el listado de "Agotados" y "Pendientes por Probar" como texto
+
+**Problema**: revisar de vez en cuando si algún perfume de "Agotados" o
+"Pendientes por Probar" ya volvió a tener stock implica ir uno por uno
+buscándolo a mano en el buscador de perfumes.
+
+**Idea de solución**: un botón (uno en cada sección) que genere un texto
+plano con el listado de nombres (mismo patrón que "Exportar tienda":
+modal con el texto y botón "Copiar"), para pegarlo de una sola vez en
+el buscador de perfumes y detectar más rápido cuáles ya aparecen.
+Definir al implementar si conviene incluir la referencia además del
+nombre, y el formato exacto del texto (uno por línea, separado por
+comas, etc.).
+
+---
+
 *(Agregar más ideas acá abajo a medida que surjan, en el mismo formato.)*
