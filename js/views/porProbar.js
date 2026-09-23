@@ -8,10 +8,12 @@ const content = document.getElementById('por-probar-content');
 const searchInput = document.getElementById('buscar-por-probar');
 const btnFiltroSinProbador = document.getElementById('btn-filtro-sin-probador');
 const btnFiltroDestacado = document.getElementById('btn-filtro-destacado');
+const btnColapsarTodo = document.getElementById('btn-colapsar-todo');
 
 let rows = [];
 let pendientesCompra = [];
 const collapsedTiendas = new Set();
+let tiendasVisibles = new Set();
 let searchQuery = '';
 let onlySinProbador = false;
 let onlyDestacado = false;
@@ -82,6 +84,10 @@ function draw() {
     grupos.get(p.donde_comprar_tienda_nombre).pendientes.push(p);
   }
 
+  tiendasVisibles = new Set(grupos.keys());
+  const hayAlgunaExpandida = [...tiendasVisibles].some((t) => !collapsedTiendas.has(t));
+  btnColapsarTodo.textContent = hayAlgunaExpandida ? 'Contraer todo' : 'Expandir todo';
+
   if (!grupos.size) {
     content.innerHTML = '<p class="empty-state">Sin resultados con ese filtro.</p>';
     return;
@@ -116,9 +122,11 @@ function cardHtml(r) {
         <div class="card-title"><span class="card-num">${num}</span>${escapeHtml(r.nombre_perfume)}</div>
         <button type="button" class="star-btn ${r.destacado ? 'active' : ''}" data-action="destacado" title="Destacar">${r.destacado ? '★' : '☆'}</button>
       </div>
+      ${r.es_tester ? '<div class="alert-tester">🧪 Pedir el TESTER al comprar</div>' : ''}
       ${r.referencia ? `<div class="card-ref">Ref: ${escapeHtml(r.referencia)}</div>` : ''}
       <div class="card-meta">
         <span class="chip chip-price">${formatCLP(r.precio)}</span>
+        ${r.prioridad != null ? `<span class="chip chip-prioridad">🎯 ${r.prioridad}</span>` : ''}
         ${dispChip}
         ${modChip}
       </div>
@@ -137,6 +145,7 @@ function cardHtmlPendienteCompra(p) {
   return `
     <div class="card card-pendiente-compra" data-id-pendiente="${p.id}">
       <div class="card-title">🛒 ${escapeHtml(p.nombre_perfume)}</div>
+      ${p.es_tester ? '<div class="alert-tester">🧪 Pedir el TESTER al comprar</div>' : ''}
       ${p.referencia ? `<div class="card-ref">Ref: ${escapeHtml(p.referencia)}</div>` : ''}
       <div class="card-meta">
         <span class="chip chip-pendiente">Pendiente de compra</span>
@@ -171,6 +180,16 @@ btnFiltroSinProbador.addEventListener('click', () => {
 btnFiltroDestacado.addEventListener('click', () => {
   onlyDestacado = !onlyDestacado;
   btnFiltroDestacado.classList.toggle('active', onlyDestacado);
+  draw();
+});
+
+btnColapsarTodo.addEventListener('click', () => {
+  const hayAlgunaExpandida = [...tiendasVisibles].some((t) => !collapsedTiendas.has(t));
+  if (hayAlgunaExpandida) {
+    tiendasVisibles.forEach((t) => collapsedTiendas.add(t));
+  } else {
+    collapsedTiendas.clear();
+  }
   draw();
 });
 
@@ -233,7 +252,11 @@ async function handleEditar(row) {
         <label>Referencia / a qué imita</label>
         <input type="text" name="referencia" value="${escapeHtml(row.referencia || '')}" />
       </div>
-      <p class="import-format">El nombre y la referencia se comparten si este perfume está listado en más de una tienda.</p>
+      <div class="form-row">
+        <label>Prioridad (0-10, la que te dio la IA)</label>
+        <input type="number" name="prioridad" min="0" max="10" step="0.1" value="${row.prioridad ?? ''}" />
+      </div>
+      <p class="import-format">El nombre, la referencia y la prioridad se comparten si este perfume está listado en más de una tienda.</p>
       <div class="form-row">
         <label>Precio en ${escapeHtml(row.tienda_nombre)}</label>
         <input type="number" name="precio" min="0" step="1" value="${row.precio ?? ''}" />
@@ -255,6 +278,9 @@ async function handleEditar(row) {
           <label><input type="radio" name="modalidad" value="comprar_aqui" ${row.modalidad === 'comprar_aqui' ? 'checked' : ''} /> Comprar aquí</label>
           <label><input type="radio" name="modalidad" value="solo_probar" ${row.modalidad === 'solo_probar' ? 'checked' : ''} /> Solo probar</label>
         </div>
+      </div>
+      <div class="form-row">
+        <label><input type="checkbox" name="es_tester" ${row.es_tester ? 'checked' : ''} /> 🧪 Es tester — pedir el tester al comprar</label>
       </div>
       <div class="modal-actions" style="justify-content:space-between; flex-wrap:wrap; gap:8px;">
         <div style="display:flex; gap:8px; flex-wrap:wrap;">
@@ -316,6 +342,8 @@ async function handleEditar(row) {
         p_comentario: fd.get('comentario') || null,
         p_disponibilidad: fd.get('disponibilidad'),
         p_modalidad: fd.get('modalidad'),
+        p_prioridad: fd.get('prioridad') ? Number(fd.get('prioridad')) : null,
+        p_es_tester: fd.get('es_tester') === 'on',
       });
       closeModal();
       toast('Guardado');
@@ -509,7 +537,7 @@ async function handleAgregarTienda(row) {
   const el = openModal(`
     <h3>Agregar tienda — ${escapeHtml(row.nombre_perfume)}</h3>
     <form id="form-agregar-tienda">
-      ${storeAndPriceFieldsHtml(disponibles)}
+      ${storeAndPriceFieldsHtml(disponibles, {}, true)}
       <div class="modal-actions">
         <button type="button" class="btn btn-secondary" data-action="cancel">Cancelar</button>
         <button type="submit" class="btn btn-primary">Agregar</button>
@@ -528,6 +556,7 @@ async function handleAgregarTienda(row) {
         p_comentario: fd.get('comentario') || null,
         p_disponibilidad: fd.get('disponibilidad'),
         p_modalidad: fd.get('modalidad'),
+        p_es_tester: fd.get('es_tester') === 'on',
       });
       closeModal();
       toast('Tienda agregada');
@@ -538,13 +567,14 @@ async function handleAgregarTienda(row) {
   });
 }
 
-export function storeAndPriceFieldsHtml(tiendas, selected = {}) {
+export function storeAndPriceFieldsHtml(tiendas, selected = {}, mostrarTester = false) {
   const sel = {
     tienda_id: selected.tienda_id || '',
     precio: selected.precio ?? '',
     comentario: selected.comentario || '',
     disponibilidad: selected.disponibilidad || 'con_probador',
     modalidad: selected.modalidad || 'comprar_aqui',
+    es_tester: selected.es_tester || false,
   };
   return `
     <div class="form-row">
@@ -577,6 +607,10 @@ export function storeAndPriceFieldsHtml(tiendas, selected = {}) {
         <label><input type="radio" name="modalidad" value="solo_probar" ${sel.modalidad === 'solo_probar' ? 'checked' : ''} /> Solo probar</label>
       </div>
     </div>
+    ${mostrarTester ? `
+    <div class="form-row">
+      <label><input type="checkbox" name="es_tester" ${sel.es_tester ? 'checked' : ''} /> 🧪 Es tester — pedir el tester al comprar</label>
+    </div>` : ''}
   `;
 }
 
@@ -599,7 +633,11 @@ document.getElementById('btn-nuevo-perfume').addEventListener('click', async () 
         <label>Referencia / a qué imita (opcional)</label>
         <input type="text" name="referencia" />
       </div>
-      ${storeAndPriceFieldsHtml(tiendas)}
+      <div class="form-row">
+        <label>Prioridad (0-10, opcional, la que te dio la IA)</label>
+        <input type="number" name="prioridad" min="0" max="10" step="0.1" />
+      </div>
+      ${storeAndPriceFieldsHtml(tiendas, {}, true)}
       <div class="modal-actions">
         <button type="button" class="btn btn-secondary" data-action="cancel">Cancelar</button>
         <button type="submit" class="btn btn-primary">Guardar</button>
@@ -643,6 +681,8 @@ document.getElementById('btn-nuevo-perfume').addEventListener('click', async () 
         p_comentario: fd.get('comentario') || null,
         p_disponibilidad: fd.get('disponibilidad'),
         p_modalidad: fd.get('modalidad'),
+        p_prioridad: fd.get('prioridad') ? Number(fd.get('prioridad')) : null,
+        p_es_tester: fd.get('es_tester') === 'on',
       });
       closeModal();
       toast('Perfume agregado');
@@ -668,13 +708,18 @@ async function reopenNuevoPerfumeModal(nombre, fd) {
         <label>Referencia / a qué imita (opcional)</label>
         <input type="text" name="referencia" value="${escapeHtml(fd.get('referencia') || '')}" />
       </div>
+      <div class="form-row">
+        <label>Prioridad (0-10, opcional, la que te dio la IA)</label>
+        <input type="number" name="prioridad" min="0" max="10" step="0.1" value="${escapeHtml(fd.get('prioridad') || '')}" />
+      </div>
       ${storeAndPriceFieldsHtml(tiendas, {
         tienda_id: fd.get('tienda_id'),
         precio: fd.get('precio'),
         comentario: fd.get('comentario'),
         disponibilidad: fd.get('disponibilidad'),
         modalidad: fd.get('modalidad'),
-      })}
+        es_tester: fd.get('es_tester') === 'on',
+      }, true)}
       <div class="modal-actions">
         <button type="button" class="btn btn-secondary" data-action="cancel">Cancelar</button>
         <button type="submit" class="btn btn-primary">Guardar de todas formas</button>
@@ -694,6 +739,8 @@ async function reopenNuevoPerfumeModal(nombre, fd) {
         p_comentario: fd2.get('comentario') || null,
         p_disponibilidad: fd2.get('disponibilidad'),
         p_modalidad: fd2.get('modalidad'),
+        p_prioridad: fd2.get('prioridad') ? Number(fd2.get('prioridad')) : null,
+        p_es_tester: fd2.get('es_tester') === 'on',
       });
       closeModal();
       toast('Perfume agregado');

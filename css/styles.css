@@ -27,6 +27,8 @@
   --chip-try-text: #cfa6e8;
   --chip-pendiente-bg: #16294a;
   --chip-pendiente-text: #7fb0ff;
+  --chip-prioridad-bg: #164a3f;
+  --chip-prioridad-text: #5eead4;
 }
 
 * { box-sizing: border-box; }
@@ -277,6 +279,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .chip-buy { background: var(--chip-buy-bg); color: var(--chip-buy-text); }
 .chip-try { background: var(--chip-try-bg); color: var(--chip-try-text); }
 .chip-pendiente { background: var(--chip-pendiente-bg); color: var(--chip-pendiente-text); }
+.chip-prioridad { background: var(--chip-prioridad-bg); color: var(--chip-prioridad-text); }
 
 .empty-state { color: var(--muted); text-align: center; padding: 40px 12px; }
 
@@ -440,6 +443,15 @@ input:checked + .slider:before { transform: translateX(18px); }
 .card-pendiente-compra {
   border-color: #3b82f6;
   background: linear-gradient(0deg, rgba(59, 130, 246, 0.1), rgba(59, 130, 246, 0.1)), var(--card-bg);
+}
+.alert-tester {
+  background: #ec4899;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.8rem;
+  padding: 6px 10px;
+  border-radius: 8px;
+  margin-bottom: 8px;
 }
 
 /* ---------- Toast con acción (deshacer) ---------- */

@@ -151,6 +151,19 @@ where pc.donde_comprar_tienda_id is null
   and pc.donde_comprar is not null
   and lower(trim(pc.donde_comprar)) = lower(trim(t.nombre));
 
+-- Prioridad (0-10, un decimal) que le asigna una IA externa al investigar
+-- el perfume — es del perfume en sí, no de la tienda puntual.
+alter table por_probar add column if not exists prioridad numeric;
+
+-- Si el perfume encontrado en esta tienda era el tester (frasco de muestra,
+-- a veces distinto del producto en caja) — recordatorio para pedir
+-- específicamente el tester al momento de comprar. Es por tienda porque es
+-- una particularidad de esa oportunidad puntual, no del perfume en general.
+alter table por_probar_tienda add column if not exists es_tester boolean not null default false;
+-- Se traspasa a pendientes_compra cuando pasa por ahí (ver me_gusto), para
+-- que el recordatorio siga vigente hasta el momento real de la compra.
+alter table pendientes_compra add column if not exists es_tester boolean not null default false;
+
 -- ---------------------------------------------------------------------
 -- 2. BLOQUEO DE ACCESO DIRECTO
 --    RLS activado y SIN políticas para anon/authenticated en ninguna
@@ -271,8 +284,8 @@ $$;
 -- 5. POR PROBAR
 -- ---------------------------------------------------------------------
 
--- drop porque cambia la forma de la tabla retornada (se agregó "destacado")
--- y create or replace no permite eso.
+-- drop porque cambia la forma de la tabla retornada (se agregaron
+-- "destacado", "prioridad" y "es_tester") y create or replace no permite eso.
 drop function if exists public.listar_por_probar(uuid);
 create or replace function public.listar_por_probar(p_token uuid)
 returns table (
@@ -280,6 +293,7 @@ returns table (
   nombre_perfume text,
   referencia text,
   destacado boolean,
+  prioridad numeric,
   por_probar_tienda_id uuid,
   tienda_id uuid,
   tienda_nombre text,
@@ -287,6 +301,7 @@ returns table (
   comentario text,
   disponibilidad text,
   modalidad text,
+  es_tester boolean,
   creado timestamptz
 )
 language plpgsql security definer set search_path = public
@@ -294,14 +309,14 @@ as $$
 begin
   perform check_token(p_token);
   return query
-    select pp.id, pp.nombre_perfume, pp.referencia, pp.destacado,
+    select pp.id, pp.nombre_perfume, pp.referencia, pp.destacado, pp.prioridad,
            ppt.id, ppt.tienda_id, t.nombre,
-           ppt.precio, ppt.comentario, ppt.disponibilidad, ppt.modalidad,
+           ppt.precio, ppt.comentario, ppt.disponibilidad, ppt.modalidad, ppt.es_tester,
            ppt.created_at
     from por_probar_tienda ppt
     join por_probar pp on pp.id = ppt.por_probar_id
     join tiendas t on t.id = ppt.tienda_id
-    order by t.nombre, pp.nombre_perfume;
+    order by t.nombre, pp.prioridad desc nulls last, pp.nombre_perfume;
 end;
 $$;
 
@@ -359,9 +374,11 @@ begin
 end;
 $$;
 
+drop function if exists public.crear_por_probar(uuid, text, text, uuid, numeric, text, text, text);
 create or replace function public.crear_por_probar(
   p_token uuid, p_nombre text, p_referencia text, p_tienda_id uuid,
-  p_precio numeric, p_comentario text, p_disponibilidad text, p_modalidad text
+  p_precio numeric, p_comentario text, p_disponibilidad text, p_modalidad text,
+  p_prioridad numeric default null, p_es_tester boolean default false
 )
 returns uuid
 language plpgsql security definer set search_path = public
@@ -370,19 +387,21 @@ declare
   v_id uuid;
 begin
   perform check_token(p_token);
-  insert into por_probar (nombre_perfume, referencia)
-    values (trim(p_nombre), nullif(trim(p_referencia), ''))
+  insert into por_probar (nombre_perfume, referencia, prioridad)
+    values (trim(p_nombre), nullif(trim(p_referencia), ''), p_prioridad)
     returning id into v_id;
-  insert into por_probar_tienda (por_probar_id, tienda_id, precio, comentario, disponibilidad, modalidad)
+  insert into por_probar_tienda (por_probar_id, tienda_id, precio, comentario, disponibilidad, modalidad, es_tester)
     values (v_id, p_tienda_id, p_precio, p_comentario,
-            coalesce(p_disponibilidad, 'con_probador'), coalesce(p_modalidad, 'comprar_aqui'));
+            coalesce(p_disponibilidad, 'con_probador'), coalesce(p_modalidad, 'comprar_aqui'), coalesce(p_es_tester, false));
   return v_id;
 end;
 $$;
 
+drop function if exists public.agregar_tienda_a_por_probar(uuid, uuid, uuid, numeric, text, text, text);
 create or replace function public.agregar_tienda_a_por_probar(
   p_token uuid, p_por_probar_id uuid, p_tienda_id uuid,
-  p_precio numeric, p_comentario text, p_disponibilidad text, p_modalidad text
+  p_precio numeric, p_comentario text, p_disponibilidad text, p_modalidad text,
+  p_es_tester boolean default false
 )
 returns uuid
 language plpgsql security definer set search_path = public
@@ -391,9 +410,9 @@ declare
   v_id uuid;
 begin
   perform check_token(p_token);
-  insert into por_probar_tienda (por_probar_id, tienda_id, precio, comentario, disponibilidad, modalidad)
+  insert into por_probar_tienda (por_probar_id, tienda_id, precio, comentario, disponibilidad, modalidad, es_tester)
     values (p_por_probar_id, p_tienda_id, p_precio, p_comentario,
-            coalesce(p_disponibilidad, 'con_probador'), coalesce(p_modalidad, 'comprar_aqui'))
+            coalesce(p_disponibilidad, 'con_probador'), coalesce(p_modalidad, 'comprar_aqui'), coalesce(p_es_tester, false))
     returning id into v_id;
   return v_id;
 end;
@@ -417,13 +436,14 @@ language sql security definer set search_path = public
 as $$
   select jsonb_build_object(
     'por_probar', (
-      select jsonb_build_object('nombre_perfume', pp.nombre_perfume, 'referencia', pp.referencia, 'destacado', pp.destacado)
+      select jsonb_build_object('nombre_perfume', pp.nombre_perfume, 'referencia', pp.referencia,
+        'destacado', pp.destacado, 'prioridad', pp.prioridad)
       from por_probar pp where pp.id = p_por_probar_id
     ),
     'tiendas', (
       select coalesce(jsonb_agg(jsonb_build_object(
         'tienda_id', ppt.tienda_id, 'precio', ppt.precio, 'comentario', ppt.comentario,
-        'disponibilidad', ppt.disponibilidad, 'modalidad', ppt.modalidad
+        'disponibilidad', ppt.disponibilidad, 'modalidad', ppt.modalidad, 'es_tester', ppt.es_tester
       )), '[]'::jsonb)
       from por_probar_tienda ppt where ppt.por_probar_id = p_por_probar_id
     )
@@ -450,14 +470,15 @@ declare
   v_nombre text;
   v_referencia text;
   v_comentario text;
+  v_es_tester boolean;
   v_destino_id uuid;
   v_historial_id uuid;
   v_snapshot jsonb;
 begin
   perform check_token(p_token);
 
-  select ppt.por_probar_id, ppt.tienda_id, ppt.modalidad, pp.nombre_perfume, pp.referencia, ppt.comentario
-    into v_por_probar_id, v_tienda_id, v_modalidad, v_nombre, v_referencia, v_comentario
+  select ppt.por_probar_id, ppt.tienda_id, ppt.modalidad, pp.nombre_perfume, pp.referencia, ppt.comentario, ppt.es_tester
+    into v_por_probar_id, v_tienda_id, v_modalidad, v_nombre, v_referencia, v_comentario, v_es_tester
   from por_probar_tienda ppt
   join por_probar pp on pp.id = ppt.por_probar_id
   where ppt.id = p_por_probar_tienda_id;
@@ -475,8 +496,8 @@ begin
     insert into historial_movimientos (tipo, snapshot, destino_id)
       values ('compra', v_snapshot, v_destino_id) returning id into v_historial_id;
   else
-    insert into pendientes_compra (nombre_perfume, referencia, comentario, tienda_probada_id, fecha_prueba, donde_comprar, donde_comprar_tienda_id)
-      values (v_nombre, v_referencia, v_comentario, v_tienda_id, current_date, nullif(trim(coalesce(p_donde_comprar, '')), ''), p_donde_comprar_tienda_id)
+    insert into pendientes_compra (nombre_perfume, referencia, comentario, tienda_probada_id, fecha_prueba, donde_comprar, donde_comprar_tienda_id, es_tester)
+      values (v_nombre, v_referencia, v_comentario, v_tienda_id, current_date, nullif(trim(coalesce(p_donde_comprar, '')), ''), p_donde_comprar_tienda_id, coalesce(v_es_tester, false))
       returning id into v_destino_id;
     insert into historial_movimientos (tipo, snapshot, destino_id)
       values ('pendiente_compra', v_snapshot, v_destino_id) returning id into v_historial_id;
@@ -560,23 +581,25 @@ begin
 
   v_snapshot := v_hist.snapshot;
 
-  insert into por_probar (nombre_perfume, referencia, destacado)
+  insert into por_probar (nombre_perfume, referencia, destacado, prioridad)
     values (
       v_snapshot->'por_probar'->>'nombre_perfume',
       nullif(v_snapshot->'por_probar'->>'referencia', ''),
-      coalesce((v_snapshot->'por_probar'->>'destacado')::boolean, false)
+      coalesce((v_snapshot->'por_probar'->>'destacado')::boolean, false),
+      nullif(v_snapshot->'por_probar'->>'prioridad', '')::numeric
     )
     returning id into v_new_id;
 
   for v_tienda in select * from jsonb_array_elements(v_snapshot->'tiendas') loop
-    insert into por_probar_tienda (por_probar_id, tienda_id, precio, comentario, disponibilidad, modalidad)
+    insert into por_probar_tienda (por_probar_id, tienda_id, precio, comentario, disponibilidad, modalidad, es_tester)
       values (
         v_new_id,
         (v_tienda->>'tienda_id')::uuid,
         nullif(v_tienda->>'precio', '')::numeric,
         nullif(v_tienda->>'comentario', ''),
         coalesce(nullif(v_tienda->>'disponibilidad', ''), 'con_probador'),
-        coalesce(nullif(v_tienda->>'modalidad', ''), 'comprar_aqui')
+        coalesce(nullif(v_tienda->>'modalidad', ''), 'comprar_aqui'),
+        coalesce((v_tienda->>'es_tester')::boolean, false)
       );
   end loop;
 
@@ -609,10 +632,12 @@ $$;
 
 -- Edita nombre/referencia (compartidos por el perfume en todas sus tiendas)
 -- y precio/comentario/disponibilidad/modalidad (propios de esta tienda).
+drop function if exists public.editar_por_probar(uuid, uuid, text, text, numeric, text, text, text);
 create or replace function public.editar_por_probar(
   p_token uuid, p_por_probar_tienda_id uuid,
   p_nombre_perfume text, p_referencia text,
-  p_precio numeric, p_comentario text, p_disponibilidad text, p_modalidad text
+  p_precio numeric, p_comentario text, p_disponibilidad text, p_modalidad text,
+  p_prioridad numeric default null, p_es_tester boolean default false
 )
 returns void
 language plpgsql security definer set search_path = public
@@ -627,13 +652,15 @@ begin
   end if;
 
   update por_probar
-    set nombre_perfume = trim(p_nombre_perfume), referencia = nullif(trim(p_referencia), '')
+    set nombre_perfume = trim(p_nombre_perfume), referencia = nullif(trim(p_referencia), ''),
+        prioridad = p_prioridad
     where id = v_por_probar_id;
 
   update por_probar_tienda
     set precio = p_precio, comentario = p_comentario,
         disponibilidad = coalesce(p_disponibilidad, disponibilidad),
-        modalidad = coalesce(p_modalidad, modalidad)
+        modalidad = coalesce(p_modalidad, modalidad),
+        es_tester = coalesce(p_es_tester, false)
     where id = p_por_probar_tienda_id;
 end;
 $$;
@@ -700,13 +727,14 @@ $$;
 -- ---------------------------------------------------------------------
 
 -- drop porque cambia la forma de la tabla retornada (se agregaron
--- "donde_comprar" y "donde_comprar_tienda_id"/"donde_comprar_tienda_nombre")
+-- "donde_comprar", "donde_comprar_tienda_id"/"donde_comprar_tienda_nombre"
+-- y "es_tester")
 drop function if exists public.listar_pendientes_compra(uuid);
 create or replace function public.listar_pendientes_compra(p_token uuid)
 returns table (
   id uuid, nombre_perfume text, referencia text, comentario text,
   tienda_probada_id uuid, tienda_nombre text, fecha_prueba date, donde_comprar text,
-  donde_comprar_tienda_id uuid, donde_comprar_tienda_nombre text
+  donde_comprar_tienda_id uuid, donde_comprar_tienda_nombre text, es_tester boolean
 )
 language plpgsql security definer set search_path = public
 as $$
@@ -715,7 +743,7 @@ begin
   return query
     select pc.id, pc.nombre_perfume, pc.referencia, pc.comentario,
            pc.tienda_probada_id, t.nombre, pc.fecha_prueba, pc.donde_comprar,
-           pc.donde_comprar_tienda_id, tc.nombre
+           pc.donde_comprar_tienda_id, tc.nombre, pc.es_tester
     from pendientes_compra pc
     left join tiendas t on t.id = pc.tienda_probada_id
     left join tiendas tc on tc.id = pc.donde_comprar_tienda_id
@@ -1099,9 +1127,9 @@ begin
     'por_probar', (
       select coalesce(jsonb_agg(row_to_json(x) order by x.nombre_perfume, x.tienda_nombre), '[]'::jsonb)
       from (
-        select pp.id as por_probar_id, pp.nombre_perfume, pp.referencia, pp.destacado,
+        select pp.id as por_probar_id, pp.nombre_perfume, pp.referencia, pp.destacado, pp.prioridad,
                ppt.id as por_probar_tienda_id, ppt.tienda_id, t.nombre as tienda_nombre,
-               ppt.precio, ppt.comentario, ppt.disponibilidad, ppt.modalidad
+               ppt.precio, ppt.comentario, ppt.disponibilidad, ppt.modalidad, ppt.es_tester
         from por_probar pp
         join por_probar_tienda ppt on ppt.por_probar_id = pp.id
         join tiendas t on t.id = ppt.tienda_id
@@ -1111,7 +1139,8 @@ begin
       select coalesce(jsonb_agg(row_to_json(x) order by x.fecha_prueba desc), '[]'::jsonb)
       from (
         select pc.id, pc.nombre_perfume, pc.referencia, pc.comentario, pc.fecha_prueba,
-               t.nombre as tienda_nombre, pc.donde_comprar, tc.nombre as donde_comprar_tienda_nombre
+               t.nombre as tienda_nombre, pc.donde_comprar, tc.nombre as donde_comprar_tienda_nombre,
+               pc.es_tester
         from pendientes_compra pc
           left join tiendas t on t.id = pc.tienda_probada_id
           left join tiendas tc on tc.id = pc.donde_comprar_tienda_id
@@ -1360,12 +1389,12 @@ grant execute on function public.listar_tiendas(uuid) to anon;
 grant execute on function public.crear_tienda(uuid, text) to anon;
 grant execute on function public.set_tienda_activa(uuid, uuid, boolean) to anon;
 grant execute on function public.listar_por_probar(uuid) to anon;
-grant execute on function public.crear_por_probar(uuid, text, text, uuid, numeric, text, text, text) to anon;
-grant execute on function public.agregar_tienda_a_por_probar(uuid, uuid, uuid, numeric, text, text, text) to anon;
+grant execute on function public.crear_por_probar(uuid, text, text, uuid, numeric, text, text, text, numeric, boolean) to anon;
+grant execute on function public.agregar_tienda_a_por_probar(uuid, uuid, uuid, numeric, text, text, text, boolean) to anon;
 grant execute on function public.marcar_sin_probador(uuid, uuid) to anon;
 grant execute on function public.me_gusto(uuid, uuid, numeric, text, uuid) to anon;
 grant execute on function public.no_me_gusto(uuid, uuid, text) to anon;
-grant execute on function public.editar_por_probar(uuid, uuid, text, text, numeric, text, text, text) to anon;
+grant execute on function public.editar_por_probar(uuid, uuid, text, text, numeric, text, text, text, numeric, boolean) to anon;
 grant execute on function public.eliminar_por_probar_tienda(uuid, uuid) to anon;
 grant execute on function public.marcar_agotado(uuid, uuid) to anon;
 grant execute on function public.toggle_destacado(uuid, uuid, boolean) to anon;

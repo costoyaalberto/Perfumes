@@ -75,6 +75,41 @@ searchInput.addEventListener('input', drawPendientes);
 searchInputProbar.addEventListener('input', drawPendientesProbar);
 searchInputAgotados.addEventListener('input', drawAgotados);
 
+document.getElementById('btn-exportar-pendientes-probar').addEventListener('click', () => {
+  exportarListadoNombres(itemsProbar, 'Pendientes por Probar');
+});
+
+document.getElementById('btn-exportar-agotados').addEventListener('click', () => {
+  exportarListadoNombres(itemsAgotados, 'Agotados');
+});
+
+function exportarListadoNombres(lista, titulo) {
+  if (!lista.length) {
+    toast(`No hay perfumes en "${titulo}" para exportar`, true);
+    return;
+  }
+  const texto = lista.map((p) => p.nombre_perfume).join('\n');
+  const el = openModal(`
+    <h3>Exportar — ${escapeHtml(titulo)}</h3>
+    <textarea id="export-listado-texto" rows="14" readonly
+      style="width:100%; font-family:ui-monospace,monospace; font-size:0.8rem; white-space:pre-wrap;">${escapeHtml(texto)}</textarea>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" data-action="cerrar">Cerrar</button>
+      <button type="button" class="btn btn-primary" data-action="copiar">Copiar</button>
+    </div>
+  `);
+  el.querySelector('[data-action="cerrar"]').addEventListener('click', closeModal);
+  el.querySelector('[data-action="copiar"]').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(texto);
+      toast('Copiado al portapapeles');
+    } catch (err) {
+      el.querySelector('#export-listado-texto').select();
+      toast('No se pudo copiar automático — seleccionamos el texto, cópialo con Ctrl/Cmd+C', true);
+    }
+  });
+}
+
 function movimientoHtml(m) {
   return `
     <div class="movimiento-row" data-id-movimiento="${m.id}">
@@ -114,6 +149,7 @@ function cardHtml(p) {
   return `
     <div class="card card-clickable" data-id="${p.id}">
       <div class="card-title">${escapeHtml(p.nombre_perfume)}</div>
+      ${p.es_tester ? '<div class="alert-tester">🧪 Pedir el TESTER al comprar</div>' : ''}
       ${p.referencia ? `<div class="card-ref">Ref: ${escapeHtml(p.referencia)}</div>` : ''}
       <div class="card-store-line">🛒 Comprar en: <strong>${escapeHtml(p.donde_comprar_tienda_nombre || p.donde_comprar || 'Sin definir (toca para editar)')}</strong></div>
       <div class="card-meta">

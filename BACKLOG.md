@@ -147,82 +147,42 @@ El parseo es tolerante: ignora texto suelto que la IA agregue y omite
 
 ---
 
-## 14. Botón para contraer todas las tiendas en "Por Probar"
+## ~~14. Botón para contraer todas las tiendas en "Por Probar"~~ — Hecho (v16)
 
-**Problema**: cada grupo de tienda en "Por Probar" se puede contraer
-tocando su encabezado, pero hoy hay que hacerlo tienda por tienda a
-mano cada vez.
-
-**Idea de solución**: un botón (en el `filter-row`, junto a los demás
-filtros) que contraiga todos los grupos de una sola vez — y
-probablemente conviene que el mismo botón alterne para expandir todos
-de nuevo. Cambio acotado a `js/views/porProbar.js` (ya existe
-`collapsedTiendas`, el Set que trackea qué tiendas están contraídas),
-sin tocar esquema ni RPCs.
+Implementado: botón "Contraer todo" en el `filter-row` de Por Probar
+que alterna a "Expandir todo" según el estado — contrae/expande todos
+los grupos de tienda visibles de una sola vez.
 
 ---
 
-## 15. Campo "Prioridad" en Por Probar, y ordenar las tarjetas por eso
+## ~~15. Campo "Prioridad" en Por Probar, y ordenar las tarjetas por eso~~ — Hecho (v16)
 
-**Problema**: al investigar un perfume con otra IA, la respuesta trae
-una línea tipo `Para ti: gusto 9/10 | espacio 8/10 | potencia 7/10 |
-prioridad 8.5/10`. Hoy ese dato de prioridad no tiene dónde guardarse,
-y las tarjetas de cada tienda se ven en orden alfabético — no por qué
-tan recomendable es probarlo primero.
-
-**Idea de solución** (a definir en detalle cuando se implemente):
-- Nuevo campo `prioridad` (numérico, 0-10 con un decimal, opcional) en
-  `por_probar` — es una propiedad del perfume en sí (como `referencia`),
-  no de la tienda, ya que la evaluación de la IA es sobre el perfume,
-  no sobre dónde comprarlo.
-- Se carga a mano (el usuario copia el 8.5 del texto que le devuelve la
-  IA) al crear o editar el perfume — no se intenta parsear el texto
-  completo de la IA automáticamente.
-- Mostrar la prioridad como chip en la tarjeta (ej. "⭐ 8.5").
-- Dentro de cada grupo de tienda, ordenar las tarjetas de mayor a menor
-  prioridad (hoy es alfabético por nombre). Los perfumes sin prioridad
-  cargada van al final del grupo.
-- Ojo con la numeración fija de tarjetas (item de v10/v11): al cambiar
-  el orden de aparición, revisar que timing de asignación de números
-  siga siendo estable durante la sesión.
+Implementado tal cual estaba pensado: campo `prioridad` (0-10, un
+decimal) en `por_probar`, cargado a mano en "+ Nuevo"/"Editar", se
+comparte entre tiendas del mismo perfume. Se muestra como chip "🎯 8.5"
+en la tarjeta. Las tarjetas de cada tienda ahora vienen ordenadas por
+prioridad descendente desde el propio `listar_por_probar` (los sin
+prioridad van al final) — la numeración fija de tarjetas sigue
+funcionando bien porque usa ese mismo orden de llegada.
 
 ---
 
-## 16. Checkbox "Buscar tester" — recordatorio para pedir el tester al comprar
+## ~~16. Checkbox "Buscar tester" — recordatorio para pedir el tester al comprar~~ — Hecho (v16)
 
-**Problema**: a veces el perfume que se probó era el tester (frasco de
-muestra de la tienda, que a veces difiere del producto en caja), y al
-momento de comprar el vendedor entrega la versión normal en caja porque
-no queda registrado en la app que había que pedir específicamente el
-tester.
-
-**Idea de solución** (a definir en detalle cuando se implemente):
-- Checkbox "Es tester / pedir el tester al comprar" en el formulario de
-  "+ Nuevo" y "+ Otra tienda" — es una particularidad de esa tienda
-  puntual (por eso va en `por_probar_tienda`, no en `por_probar`).
-- Cuando está marcado, mostrar un aviso bien visible en la tarjeta (no
-  un chip chico que se pueda pasar por alto — más parecido a un banner,
-  en un color que no se confunda con "destacado" ya "pendiente de
-  compra"), para que salte a la vista al momento de comprar.
-- Definir si también conviene mostrarlo en Pendientes de Compra y en el
-  cruce de Pendientes dentro de Por Probar (item 11), ya que es
-  justamente en el momento de la compra donde más importa no olvidarlo.
+Implementado en `por_probar_tienda` (por tienda, como estaba pensado),
+con checkbox en "+ Nuevo", "+ Otra tienda" y "Editar". Se decidió
+mostrar el aviso — un banner magenta bien visible, no un chip chico —
+en las tres instancias donde puede aparecer la tarjeta: Por Probar, el
+cruce de Pendientes dentro de Por Probar, y Pendientes de Compra (se
+traspasa automáticamente vía `me_gusto`).
 
 ---
 
-## 17. Exportar el listado de "Agotados" y "Pendientes por Probar" como texto
+## ~~17. Exportar el listado de "Agotados" y "Pendientes por Probar" como texto~~ — Hecho (v16)
 
-**Problema**: revisar de vez en cuando si algún perfume de "Agotados" o
-"Pendientes por Probar" ya volvió a tener stock implica ir uno por uno
-buscándolo a mano en el buscador de perfumes.
-
-**Idea de solución**: un botón (uno en cada sección) que genere un texto
-plano con el listado de nombres (mismo patrón que "Exportar tienda":
-modal con el texto y botón "Copiar"), para pegarlo de una sola vez en
-el buscador de perfumes y detectar más rápido cuáles ya aparecen.
-Definir al implementar si conviene incluir la referencia además del
-nombre, y el formato exacto del texto (uno por línea, separado por
-comas, etc.).
+Implementado con un botón "🔍 Exportar listado" en cada sección, mismo
+patrón modal + "Copiar" que el resto de las exportaciones. Se decidió
+solo el nombre del perfume, sin referencia, uno por línea.
 
 ---
 
