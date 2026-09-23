@@ -188,4 +188,26 @@ tan recomendable es probarlo primero.
 
 ---
 
+## 16. Checkbox "Buscar tester" — recordatorio para pedir el tester al comprar
+
+**Problema**: a veces el perfume que se probó era el tester (frasco de
+muestra de la tienda, que a veces difiere del producto en caja), y al
+momento de comprar el vendedor entrega la versión normal en caja porque
+no queda registrado en la app que había que pedir específicamente el
+tester.
+
+**Idea de solución** (a definir en detalle cuando se implemente):
+- Checkbox "Es tester / pedir el tester al comprar" en el formulario de
+  "+ Nuevo" y "+ Otra tienda" — es una particularidad de esa tienda
+  puntual (por eso va en `por_probar_tienda`, no en `por_probar`).
+- Cuando está marcado, mostrar un aviso bien visible en la tarjeta (no
+  un chip chico que se pueda pasar por alto — más parecido a un banner,
+  en un color que no se confunda con "destacado" ya "pendiente de
+  compra"), para que salte a la vista al momento de comprar.
+- Definir si también conviene mostrarlo en Pendientes de Compra y en el
+  cruce de Pendientes dentro de Por Probar (item 11), ya que es
+  justamente en el momento de la compra donde más importa no olvidarlo.
+
+---
+
 *(Agregar más ideas acá abajo a medida que surjan, en el mismo formato.)*
