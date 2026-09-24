@@ -1,7 +1,7 @@
 import { api } from '../api.js';
 import { getTiendas } from '../store.js';
 import { openModal, closeModal } from '../modal.js';
-import { parseDelimitado, normalizarNombre, escapeHtml, formatCLP, toast } from '../utils.js';
+import { parseDelimitado, normalizarNombre, escapeHtml, toast } from '../utils.js';
 
 const content = document.getElementById('importar-content');
 const actualizarRefContent = document.getElementById('actualizar-referencias-content');
@@ -65,14 +65,14 @@ document.getElementById('btn-exportar-tienda').addEventListener('click', async (
   }
   const el = openModal(`
     <h3>Exportar tienda</h3>
-    <p class="import-format">Arma un texto con los perfumes "Por Probar" de la tienda elegida, para pasarle a una IA antes de ir a probar.</p>
+    <p class="import-format">Elige una o más tiendas: arma un texto solo con los nombres de los perfumes "Por Probar" en ellas, para pedirle una recomendación a una IA.</p>
     <form id="form-exportar-tienda">
       <div class="form-row">
-        <label>Tienda</label>
-        <select name="tienda_id" required>
-          <option value="">Selecciona una tienda...</option>
-          ${tiendas.map((t) => `<option value="${t.id}">${escapeHtml(t.nombre)}</option>`).join('')}
-        </select>
+        ${tiendas.map((t) => `
+          <label style="display:flex; align-items:center; gap:8px; margin-bottom:10px; font-weight:500;">
+            <input type="checkbox" name="tienda_id" value="${t.id}" /> ${escapeHtml(t.nombre)}
+          </label>
+        `).join('')}
       </div>
       <div class="modal-actions">
         <button type="button" class="btn btn-secondary" data-action="cancel">Cancelar</button>
@@ -84,33 +84,31 @@ document.getElementById('btn-exportar-tienda').addEventListener('click', async (
   el.querySelector('#form-exportar-tienda').addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const fd = new FormData(ev.target);
-    const tienda = tiendas.find((t) => t.id === fd.get('tienda_id'));
-    if (!tienda) return;
+    const idsSeleccionados = fd.getAll('tienda_id');
+    if (!idsSeleccionados.length) {
+      toast('Selecciona al menos una tienda', true);
+      return;
+    }
+    const seleccionadas = tiendas.filter((t) => idsSeleccionados.includes(t.id));
     try {
-      const rows = (await api.listarPorProbar()).filter((r) => r.tienda_id === tienda.id);
-      const texto = buildExportTiendaTexto(tienda.nombre, rows);
+      const rows = await api.listarPorProbar();
+      const texto = buildExportTiendaTexto(seleccionadas, rows);
       closeModal();
-      mostrarExportTienda(tienda.nombre, texto);
+      mostrarExportTienda(seleccionadas.length, texto);
     } catch (err) {
       toast('Error: ' + err.message, true);
     }
   });
 });
 
-function buildExportTiendaTexto(tiendaNombre, rows) {
-  if (!rows.length) {
-    return `No hay perfumes "Por Probar" en la tienda "${tiendaNombre}".`;
-  }
-  const lineas = rows.map((r, i) => {
-    const partes = [`${i + 1}. ${r.nombre_perfume}`];
-    if (r.referencia) partes.push(`   Referencia: ${r.referencia}`);
-    if (r.precio != null) partes.push(`   Precio: ${formatCLP(r.precio)}`);
-    partes.push(`   Disponibilidad: ${r.disponibilidad === 'con_probador' ? 'Con probador' : 'Sin probador'}`);
-    partes.push(`   Modalidad: ${r.modalidad === 'comprar_aqui' ? 'Comprar aquí' : 'Solo probar'}`);
-    if (r.comentario) partes.push(`   Comentario: ${r.comentario}`);
-    return partes.join('\n');
+function buildExportTiendaTexto(tiendasSeleccionadas, rows) {
+  const intro = 'Estos son los perfumes que tengo pendientes de probar, agrupados por tienda. Para cada uno, decime a qué perfume conocido se parece o qué sabes de él, y qué tan recomendable es probarlo.';
+  const secciones = tiendasSeleccionadas.map((t) => {
+    const nombres = rows.filter((r) => r.tienda_id === t.id).map((r) => r.nombre_perfume);
+    const lista = nombres.length ? nombres.join('\n') : '(sin perfumes por probar acá)';
+    return `# ${t.nombre}\n${lista}`;
   });
-  return `Perfumes "Por Probar" en "${tiendaNombre}" (${rows.length}):\n\n${lineas.join('\n\n')}`;
+  return `${intro}\n\n${secciones.join('\n\n')}`;
 }
 
 document.getElementById('btn-exportar-referencias').addEventListener('click', async () => {
@@ -167,9 +165,9 @@ function mostrarExportReferencias(texto, total) {
   });
 }
 
-function mostrarExportTienda(tiendaNombre, texto) {
+function mostrarExportTienda(cantidadTiendas, texto) {
   const el = openModal(`
-    <h3>Exportar — ${escapeHtml(tiendaNombre)}</h3>
+    <h3>Exportar — ${cantidadTiendas} tienda${cantidadTiendas === 1 ? '' : 's'}</h3>
     <textarea id="export-tienda-texto" rows="14" readonly
       style="width:100%; font-family:ui-monospace,monospace; font-size:0.8rem; white-space:pre-wrap;">${escapeHtml(texto)}</textarea>
     <div class="modal-actions">

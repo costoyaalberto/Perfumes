@@ -186,27 +186,17 @@ solo el nombre del perfume, sin referencia, uno por línea.
 
 ---
 
-## 18. Exportar "Por Probar" de una o más tiendas (solo nombres) para pedir recomendación a una IA
+## ~~18. Exportar "Por Probar" de una o más tiendas (solo nombres) para pedir recomendación a una IA~~ — Hecho (v17)
 
-**Problema**: "Exportar tienda" (item 10) exporta el detalle completo
-(referencia, precio, disponibilidad, modalidad, comentario) de **una**
-tienda a la vez — pensado para llevar a la tienda y decidir en qué
-fijarse al probar. Falta una exportación más simple: solo los
-**nombres** de los perfumes "Por Probar", pudiendo elegir **una o
-varias tiendas a la vez**, para pedirle a una IA una recomendación
-general (no el análisis detallado por precio/disponibilidad que ya
-tiene "Exportar tienda").
-
-**Idea de solución** (a definir en detalle cuando se implemente):
-- Definir si es una opción nueva dentro de "Exportar tienda" (ej. un
-  checkbox "Solo nombres" + selector multi-tienda), o un botón
-  separado.
-- Si se permite elegir varias tiendas, definir si el texto las agrupa
-  por tienda (con su encabezado) o mezcla todos los nombres en una sola
-  lista plana.
-- Mismo patrón visual que el resto: modal con el texto y botón "Copiar".
-  No requiere cambios de esquema ni RPCs nuevas (reusa `listar_por_probar`
-  filtrado en el cliente).
+Implementado como un cambio directo sobre "Exportar tienda" (no un
+botón aparte): el selector pasó de un `<select>` de una sola tienda a
+una lista de checkboxes (una o varias), y el texto generado ahora
+incluye **solo el nombre completo** de cada perfume — se sacaron
+referencia/precio/disponibilidad/modalidad/comentario, que quedan para
+que la IA los investigue. Con varias tiendas elegidas, el texto las
+agrupa por tienda con su propio encabezado (`# Nombre tienda`), y
+arranca con una instrucción para la IA pidiendo que identifique a qué
+se parece cada perfume y qué tan recomendable es probarlo.
 
 ---
 
