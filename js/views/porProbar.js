@@ -73,15 +73,23 @@ function draw() {
     if (!grupos.has(r.tienda_nombre)) grupos.set(r.tienda_nombre, { probar: [], pendientes: [] });
     grupos.get(r.tienda_nombre).probar.push(r);
   }
-  // Los pendientes de compra se muestran siempre (no se filtran por búsqueda
-  // ni por los toggles) para que el recordatorio no se pierda al filtrar.
+  // Los pendientes de compra no tienen disponibilidad ni destacado (esos son
+  // conceptos de "Por Probar"), así que esos dos toggles los ocultan del
+  // todo — pero si hay texto de búsqueda, sí se les aplica (por nombre y
+  // referencia), igual que a las tarjetas de Por Probar.
   // Van agrupados por donde_comprar_tienda_nombre (dónde se PIENSA comprar),
   // no por tienda_nombre (esa es donde solo se pudo probar, nunca comprar —
   // por eso el perfume terminó acá en vez de ir directo a Colección).
-  for (const p of pendientesCompra) {
-    if (!p.donde_comprar_tienda_nombre) continue;
-    if (!grupos.has(p.donde_comprar_tienda_nombre)) grupos.set(p.donde_comprar_tienda_nombre, { probar: [], pendientes: [] });
-    grupos.get(p.donde_comprar_tienda_nombre).pendientes.push(p);
+  if (!onlySinProbador && !onlyDestacado) {
+    let pendientesFiltrados = pendientesCompra;
+    if (q) {
+      pendientesFiltrados = pendientesFiltrados.filter((p) => normalizarNombre(p.nombre_perfume).includes(q) || normalizarNombre(p.referencia || '').includes(q));
+    }
+    for (const p of pendientesFiltrados) {
+      if (!p.donde_comprar_tienda_nombre) continue;
+      if (!grupos.has(p.donde_comprar_tienda_nombre)) grupos.set(p.donde_comprar_tienda_nombre, { probar: [], pendientes: [] });
+      grupos.get(p.donde_comprar_tienda_nombre).pendientes.push(p);
+    }
   }
 
   tiendasVisibles = new Set(grupos.keys());
