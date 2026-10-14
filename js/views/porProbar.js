@@ -19,19 +19,57 @@ let onlySinProbador = false;
 let onlyDestacado = false;
 
 // Número asignado a cada por_probar_tienda_id la primera vez que aparece,
-// para que se mantenga fijo durante la sesión (mientras se va probando
-// físicamente en la tienda) aunque otras tarjetas se eliminen o se muevan.
-// Se reinicia solo al recargar la app (estado en memoria, no persiste).
+// para que se mantenga fijo (incluso si se cierra o recarga la app) mientras
+// se va probando físicamente en la tienda, aunque otras tarjetas se eliminen
+// o se muevan. Se persiste en localStorage y solo se reinicia a mano desde
+// resetNumeracion() (disparado al generar el reporte de novedades).
+const LS_KEY_NUMERACION = 'pp_numeracion_v1';
 const numerosPorId = new Map();
 const proximoNumeroPorTienda = new Map();
 
+function cargarNumeracion() {
+  try {
+    const raw = localStorage.getItem(LS_KEY_NUMERACION);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    for (const [id, num] of data.porId || []) numerosPorId.set(id, num);
+    for (const [tienda, num] of data.porTienda || []) proximoNumeroPorTienda.set(tienda, num);
+  } catch {
+    // localStorage no disponible o datos corruptos: se arranca de cero
+  }
+}
+
+function guardarNumeracion() {
+  try {
+    localStorage.setItem(LS_KEY_NUMERACION, JSON.stringify({
+      porId: [...numerosPorId.entries()],
+      porTienda: [...proximoNumeroPorTienda.entries()],
+    }));
+  } catch {
+    // sin espacio o localStorage bloqueado: la numeración queda solo en memoria
+  }
+}
+
+cargarNumeracion();
+
 function asignarNumeros() {
+  let hayNuevos = false;
   for (const r of rows) {
     if (numerosPorId.has(r.por_probar_tienda_id)) continue;
     const num = (proximoNumeroPorTienda.get(r.tienda_nombre) || 0) + 1;
     proximoNumeroPorTienda.set(r.tienda_nombre, num);
     numerosPorId.set(r.por_probar_tienda_id, num);
+    hayNuevos = true;
   }
+  if (hayNuevos) guardarNumeracion();
+}
+
+export function resetNumeracion() {
+  numerosPorId.clear();
+  proximoNumeroPorTienda.clear();
+  try { localStorage.removeItem(LS_KEY_NUMERACION); } catch {}
+  asignarNumeros();
+  draw();
 }
 
 export async function render() {

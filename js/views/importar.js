@@ -2,6 +2,7 @@ import { api } from '../api.js';
 import { getTiendas } from '../store.js';
 import { openModal, closeModal } from '../modal.js';
 import { parseDelimitado, normalizarNombre, escapeHtml, toast } from '../utils.js';
+import { resetNumeracion } from './porProbar.js';
 
 const content = document.getElementById('importar-content');
 const actualizarRefContent = document.getElementById('actualizar-referencias-content');
@@ -29,6 +30,7 @@ document.getElementById('btn-exportar').addEventListener('click', async () => {
 document.getElementById('btn-reporte-seguimiento').addEventListener('click', async () => {
   try {
     const texto = await api.generarReporteSeguimiento(48);
+    resetNumeracion();
     mostrarReporteSeguimiento(texto);
   } catch (err) {
     toast('Error: ' + err.message, true);
