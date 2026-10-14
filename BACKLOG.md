@@ -200,4 +200,23 @@ se parece cada perfume y qué tan recomendable es probarlo.
 
 ---
 
+## 19. Sumar "Pendientes de Compra" y "Agotados" al final de "Exportar tienda"
+
+**Problema**: antes de ir a una tienda (o a recorrer el mercado en
+general), sirve aprovechar la salida para también revisar si algún
+perfume de "Pendientes de Compra" ya apareció en otro lado, o si algo
+de "Agotados" volvió a tener stock — hoy no hay forma de armar esa
+lista junto con la de "Por Probar", hay que copiarlos uno por uno a
+mano.
+
+**Idea de solución**: que "Exportar tienda" (item 18), además de los
+nombres de "Por Probar" agrupados por tienda elegida, agregue al final
+del mismo texto dos secciones más con los nombres de **Pendientes de
+Compra** y **Agotados** completos (no se filtran por tienda, son listas
+generales) — mismo formato `# Encabezado` + nombres, uno por línea, que
+ya usa el resto. Definir al implementar si esas dos secciones van
+siempre incluidas o si conviene un checkbox para sumarlas opcionalmente.
+
+---
+
 *(Agregar más ideas acá abajo a medida que surjan, en el mismo formato.)*
