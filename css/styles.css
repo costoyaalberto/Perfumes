@@ -300,7 +300,10 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   background: var(--card-bg);
   border: 1px solid var(--border);
   border-radius: 16px 16px 0 0;
-  padding: 20px;
+  /* padding-bottom extra: deja espacio libre debajo de los botones para que
+     el badge "Powered by Netlify" (lo inyecta el hosting, fijo abajo) no
+     tape "Cancelar"/"Confirmar" en pantallas chicas. */
+  padding: 20px 20px calc(20px + 56px + env(safe-area-inset-bottom, 0px)) 20px;
   width: 100%;
   max-width: 480px;
   max-height: 90vh;
