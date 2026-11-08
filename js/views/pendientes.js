@@ -6,14 +6,17 @@ import { formatFecha, escapeHtml, normalizarNombre, toast } from '../utils.js';
 
 const content = document.getElementById('pendientes-content');
 const contentProbar = document.getElementById('pendientes-probar-content');
+const contentSinProbador = document.getElementById('sin-probador-content');
 const contentAgotados = document.getElementById('agotados-content');
 const contentMovimientos = document.getElementById('movimientos-content');
 const badge = document.getElementById('badge-pendientes');
 const searchInput = document.getElementById('buscar-pendientes');
 const searchInputProbar = document.getElementById('buscar-pendientes-probar');
+const searchInputSinProbador = document.getElementById('buscar-sin-probador');
 const searchInputAgotados = document.getElementById('buscar-agotados');
 let items = [];
 let itemsProbar = [];
+let itemsSinProbador = [];
 let itemsAgotados = [];
 let movimientos = [];
 
@@ -26,20 +29,26 @@ const TIPO_LABEL = {
 export async function render() {
   content.innerHTML = '<p class="empty-state">Cargando…</p>';
   contentProbar.innerHTML = '<p class="empty-state">Cargando…</p>';
+  contentSinProbador.innerHTML = '<p class="empty-state">Cargando…</p>';
   contentAgotados.innerHTML = '<p class="empty-state">Cargando…</p>';
   contentMovimientos.innerHTML = '<p class="empty-state">Cargando…</p>';
   searchInput.value = '';
   searchInputProbar.value = '';
+  searchInputSinProbador.value = '';
   searchInputAgotados.value = '';
-  [items, itemsProbar, itemsAgotados, movimientos] = await Promise.all([
+  let todosPendientesProbar;
+  [items, todosPendientesProbar, itemsAgotados, movimientos] = await Promise.all([
     api.listarPendientes(),
     api.listarPendientesProbar(),
     api.listarAgotados(),
     api.listarMovimientosRecientes(),
   ]);
+  itemsProbar = todosPendientesProbar.filter((p) => p.motivo !== 'sin_probador');
+  itemsSinProbador = todosPendientesProbar.filter((p) => p.motivo === 'sin_probador');
   updateBadge();
   drawPendientes();
   drawPendientesProbar();
+  drawSinProbador();
   drawAgotados();
 
   contentMovimientos.innerHTML = movimientos.length
@@ -63,6 +72,14 @@ function drawPendientesProbar() {
     : `<p class="empty-state">${itemsProbar.length ? 'Sin resultados.' : 'No tienes perfumes marcados como sin stock.'}</p>`;
 }
 
+function drawSinProbador() {
+  const q = normalizarNombre(searchInputSinProbador.value);
+  const list = q ? itemsSinProbador.filter((p) => normalizarNombre(p.nombre_perfume).includes(q)) : itemsSinProbador;
+  contentSinProbador.innerHTML = list.length
+    ? list.map(cardHtmlSinProbador).join('')
+    : `<p class="empty-state">${itemsSinProbador.length ? 'Sin resultados.' : 'No tienes perfumes marcados como sin probador.'}</p>`;
+}
+
 function drawAgotados() {
   const q = normalizarNombre(searchInputAgotados.value);
   const list = q ? itemsAgotados.filter((p) => normalizarNombre(p.nombre_perfume).includes(q)) : itemsAgotados;
@@ -73,10 +90,15 @@ function drawAgotados() {
 
 searchInput.addEventListener('input', drawPendientes);
 searchInputProbar.addEventListener('input', drawPendientesProbar);
+searchInputSinProbador.addEventListener('input', drawSinProbador);
 searchInputAgotados.addEventListener('input', drawAgotados);
 
 document.getElementById('btn-exportar-pendientes-probar').addEventListener('click', () => {
-  exportarListadoNombres(itemsProbar, 'Pendientes por Probar');
+  exportarListadoNombres(itemsProbar, 'Sin Stock');
+});
+
+document.getElementById('btn-exportar-sin-probador').addEventListener('click', () => {
+  exportarListadoNombres(itemsSinProbador, 'Sin Probador');
 });
 
 document.getElementById('btn-exportar-agotados').addEventListener('click', () => {
@@ -136,7 +158,7 @@ contentMovimientos.addEventListener('click', async (e) => {
 });
 
 function updateBadge() {
-  const total = items.length + itemsProbar.length;
+  const total = items.length + itemsProbar.length + itemsSinProbador.length;
   if (total) {
     badge.textContent = total;
     badge.classList.remove('hidden');
@@ -177,6 +199,24 @@ function cardHtmlProbar(p) {
       <div class="card-actions">
         <button class="btn btn-success btn-sm" data-action="volvio">Ya volvió</button>
         <button class="btn btn-outline btn-sm" data-action="agotado-general">Agotado en general</button>
+        <button class="btn btn-danger btn-sm" data-action="eliminar-probar">Eliminar</button>
+      </div>
+    </div>
+  `;
+}
+
+function cardHtmlSinProbador(p) {
+  return `
+    <div class="card card-clickable" data-id-sin-probador="${p.id}">
+      <div class="card-title">${escapeHtml(p.nombre_perfume)}</div>
+      ${p.referencia ? `<div class="card-ref">Ref: ${escapeHtml(p.referencia)}</div>` : ''}
+      <div class="card-store-line">🧪 Sin probador en: <strong>${escapeHtml(p.tienda_nombre || '—')}</strong></div>
+      <div class="card-meta">
+        <span class="chip chip-price">${formatFecha(p.fecha)}</span>
+      </div>
+      ${p.comentario ? `<div class="card-comment">${escapeHtml(p.comentario)}</div>` : ''}
+      <div class="card-actions">
+        <button class="btn btn-success btn-sm" data-action="volvio">Ya tiene probador</button>
         <button class="btn btn-danger btn-sm" data-action="eliminar-probar">Eliminar</button>
       </div>
     </div>
@@ -225,6 +265,22 @@ contentProbar.addEventListener('click', async (e) => {
   if (btn) {
     if (btn.dataset.action === 'volvio') return handleVolvio(item);
     if (btn.dataset.action === 'agotado-general') return handleAgotadoGeneral(item);
+    if (btn.dataset.action === 'eliminar-probar') return handleEliminarProbar(item);
+    return;
+  }
+
+  handleEditarPendienteProbar(item);
+});
+
+contentSinProbador.addEventListener('click', async (e) => {
+  const card = e.target.closest('[data-id-sin-probador]');
+  if (!card) return;
+  const item = itemsSinProbador.find((i) => i.id === card.dataset.idSinProbador);
+  if (!item) return;
+
+  const btn = e.target.closest('button[data-action]');
+  if (btn) {
+    if (btn.dataset.action === 'volvio') return handleVolvio(item);
     if (btn.dataset.action === 'eliminar-probar') return handleEliminarProbar(item);
     return;
   }
@@ -325,8 +381,9 @@ async function handleEditarPendienteCompra(item) {
 }
 
 async function handleEditarPendienteProbar(item) {
+  const titulo = item.motivo === 'sin_probador' ? 'Editar — sin probador' : 'Editar — sin stock';
   const el = openModal(`
-    <h3>Editar — sin stock</h3>
+    <h3>${titulo}</h3>
     <form id="form-editar-pendiente-probar">
       <div class="form-row">
         <label>Nombre del perfume</label>
@@ -372,10 +429,11 @@ async function handleVolvio(item) {
     toast('Primero agrega al menos una tienda activa en la pestaña Tiendas', true);
     return;
   }
+  const esSinProbador = item.motivo === 'sin_probador';
   const el = openModal(`
-    <h3>Volvió a aparecer — ${escapeHtml(item.nombre_perfume)}</h3>
-    <p class="import-format">Estaba sin stock en <strong>${escapeHtml(item.tienda_nombre || '—')}</strong> —
-      dejamos esa tienda preseleccionada por si reapareció ahí mismo; cambia la opción si fue en otro lado.</p>
+    <h3>${esSinProbador ? 'Ya tiene probador' : 'Volvió a aparecer'} — ${escapeHtml(item.nombre_perfume)}</h3>
+    <p class="import-format">${esSinProbador ? 'No tenía probador' : 'Estaba sin stock'} en <strong>${escapeHtml(item.tienda_nombre || '—')}</strong> —
+      dejamos esa tienda preseleccionada por si fue ahí mismo; cambia la opción si fue en otro lado.</p>
     <form id="form-volvio">
       ${storeAndPriceFieldsHtml(tiendas, { tienda_id: item.tienda_agotado_id, comentario: item.comentario })}
       <div class="modal-actions">
@@ -407,9 +465,10 @@ async function handleVolvio(item) {
 }
 
 async function handleEliminarProbar(item) {
+  const seccion = item.motivo === 'sin_probador' ? 'Sin Probador' : 'Sin Stock';
   const ok = await confirmDialog({
     title: 'Eliminar definitivamente',
-    message: `¿Eliminar "${escapeHtml(item.nombre_perfume)}" de Pendientes por Probar? Esta acción no se puede deshacer.`,
+    message: `¿Eliminar "${escapeHtml(item.nombre_perfume)}" de ${seccion}? Esta acción no se puede deshacer.`,
     confirmLabel: 'Eliminar',
     danger: true,
   });

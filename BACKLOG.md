@@ -200,22 +200,40 @@ se parece cada perfume y qué tan recomendable es probarlo.
 
 ---
 
-## 19. Sumar "Pendientes por Probar" y "Agotados" al final de "Exportar tienda"
+## 19. Sumar "Sin Stock" y "Agotados" al final de "Exportar tienda"
 
 **Problema**: antes de ir a una tienda (o a recorrer el mercado en
 general), sirve aprovechar la salida para también revisar si algún
-perfume de "Pendientes por Probar" ya apareció en otro lado, o si algo
-de "Agotados" volvió a tener stock — hoy no hay forma de armar esa
-lista junto con la de "Por Probar", hay que copiarlos uno por uno a
-mano.
+perfume de "Sin Stock" ya apareció en otro lado, o si algo de
+"Agotados" volvió a tener stock — hoy no hay forma de armar esa lista
+junto con la de "Por Probar", hay que copiarlos uno por uno a mano.
 
 **Idea de solución**: que "Exportar tienda" (item 18), además de los
 nombres de "Por Probar" agrupados por tienda elegida, agregue al final
-del mismo texto dos secciones más con los nombres de **Pendientes por
-Probar** y **Agotados** completos (no se filtran por tienda, son listas
-generales) — mismo formato `# Encabezado` + nombres, uno por línea, que
-ya usa el resto. Definir al implementar si esas dos secciones van
-siempre incluidas o si conviene un checkbox para sumarlas opcionalmente.
+del mismo texto dos secciones más con los nombres de **Sin Stock** y
+**Agotados** completos (no se filtran por tienda, son listas generales)
+— mismo formato `# Encabezado` + nombres, uno por línea, que ya usa el
+resto. Definir al implementar si esas dos secciones van siempre
+incluidas o si conviene un checkbox para sumarlas opcionalmente.
+
+---
+
+## 20. Buscador global (todas las listas a la vez)
+
+**Problema**: cada vista (Por Probar, Colección, Lista Negra, Pendientes
+de Compra, Sin Stock, Sin Probador, Agotados) tiene su propio buscador,
+pero no hay forma de preguntar "¿este perfume ya lo probé/agregué a
+algún lado?" sin ir pestaña por pestaña. Cuando hay duda si un perfume
+ya está anotado en alguna lista, hoy no hay cómo encontrarlo de una.
+
+**Idea de solución**: un campo de búsqueda único (¿en el header? ¿una
+pestaña aparte?) que busque por nombre/referencia en todas las tablas a
+la vez (Colección, Lista Negra, Por Probar, Pendientes de Compra, Sin
+Stock, Sin Probador, Agotados) y muestre los resultados agrupados por
+lista de origen, con algo para ir directo a esa tarjeta/pestaña.
+Definir al implementar si es una RPC nueva que consulta todas las
+tablas de una vez, o varias llamadas en paralelo a los `listar_*` que
+ya existen filtradas en el cliente.
 
 ---
 

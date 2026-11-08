@@ -346,14 +346,14 @@ async function handleEditar(row) {
   el.querySelector('[data-action="agotado"]').addEventListener('click', async () => {
     const ok = await confirmDialog({
       title: 'Marcar sin stock',
-      message: `"${escapeHtml(row.nombre_perfume)}" se quitará de todas las tiendas donde estaba listado y pasará a "Pendientes por Probar" para revisarlo más adelante.`,
-      confirmLabel: 'Mover a Pendientes',
+      message: `"${escapeHtml(row.nombre_perfume)}" se quitará de todas las tiendas donde estaba listado y pasará a "Sin Stock" para revisarlo más adelante.`,
+      confirmLabel: 'Mover a Sin Stock',
     });
     if (!ok) return;
     try {
       await api.marcarAgotado(row.por_probar_tienda_id);
       closeModal();
-      toast('Movido a Pendientes por Probar');
+      toast('Movido a Sin Stock');
       render();
     } catch (err) {
       toast('Error: ' + err.message, true);
@@ -447,12 +447,13 @@ async function handleCambiarTienda(row) {
 async function handleSinProbador(row) {
   const ok = await confirmDialog({
     title: 'Marcar sin probador',
-    message: `¿Confirmas que "${escapeHtml(row.nombre_perfume)}" ya no tiene probador disponible en ${escapeHtml(row.tienda_nombre)}?`,
+    message: `"${escapeHtml(row.nombre_perfume)}" se quitará de todas las tiendas donde estaba listado y pasará a "Sin Probador" para buscarlo en otra tienda (vuelve a Por Probar apenas consiga probador).`,
+    confirmLabel: 'Mover a Sin Probador',
   });
   if (!ok) return;
   try {
     await api.marcarSinProbador(row.por_probar_tienda_id);
-    toast('Actualizado');
+    toast('Movido a Sin Probador');
     render();
   } catch (err) {
     toast('Error: ' + err.message, true);

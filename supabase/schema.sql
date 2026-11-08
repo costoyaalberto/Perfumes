@@ -70,9 +70,10 @@ create table if not exists lista_negra (
   created_at timestamptz not null default now()
 );
 
--- Perfumes que estaban "por probar" pero resultaron sin stock en ninguna
--- tienda al momento de ir a buscarlos; se guardan aquí para revisar más
--- adelante si volvieron a aparecer.
+-- Perfumes que estaban "por probar" pero no se pudieron evaluar en la
+-- tienda puntual donde se buscaron: sin stock (motivo='sin_stock') o con
+-- stock pero sin probador disponible ahí (motivo='sin_probador'). Se
+-- guardan aquí para retomarlos (en esa misma tienda u otra) más adelante.
 create table if not exists pendientes_probar (
   id uuid primary key default gen_random_uuid(),
   nombre_perfume text not null,
@@ -163,6 +164,13 @@ alter table por_probar_tienda add column if not exists es_tester boolean not nul
 -- Se traspasa a pendientes_compra cuando pasa por ahí (ver me_gusto), para
 -- que el recordatorio siga vigente hasta el momento real de la compra.
 alter table pendientes_compra add column if not exists es_tester boolean not null default false;
+
+-- Distingue por qué un perfume salió de "Por Probar" hacia pendientes_probar:
+-- 'sin_stock' (no había en esa tienda) o 'sin_probador' (había stock pero
+-- no se pudo evaluar ahí). Las filas existentes quedan como 'sin_stock',
+-- que es como se usaba la tabla hasta ahora.
+alter table pendientes_probar add column if not exists motivo text not null default 'sin_stock'
+  check (motivo in ('sin_stock', 'sin_probador'));
 
 -- ---------------------------------------------------------------------
 -- 2. BLOQUEO DE ACCESO DIRECTO
@@ -418,13 +426,38 @@ begin
 end;
 $$;
 
+-- Había stock pero no se pudo evaluar en ESTA tienda por falta de
+-- probador: igual que marcar_agotado, saca el perfume de "Por Probar"
+-- (todas sus tiendas) y lo guarda en pendientes_probar, pero con
+-- motivo='sin_probador' — se recuerda la tienda y el precio por si
+-- conviene retomarlo ahí mismo una vez que consiga probador.
 create or replace function public.marcar_sin_probador(p_token uuid, p_por_probar_tienda_id uuid)
 returns void
 language plpgsql security definer set search_path = public
 as $$
+declare
+  v_por_probar_id uuid;
+  v_tienda_id uuid;
+  v_nombre text;
+  v_referencia text;
+  v_comentario text;
 begin
   perform check_token(p_token);
-  update por_probar_tienda set disponibilidad = 'sin_probador' where id = p_por_probar_tienda_id;
+
+  select ppt.por_probar_id, ppt.tienda_id, pp.nombre_perfume, pp.referencia, ppt.comentario
+    into v_por_probar_id, v_tienda_id, v_nombre, v_referencia, v_comentario
+  from por_probar_tienda ppt
+  join por_probar pp on pp.id = ppt.por_probar_id
+  where ppt.id = p_por_probar_tienda_id;
+
+  if v_por_probar_id is null then
+    raise exception 'No se encontró el registro';
+  end if;
+
+  insert into pendientes_probar (nombre_perfume, referencia, comentario, tienda_agotado_id, fecha, motivo)
+    values (v_nombre, v_referencia, v_comentario, v_tienda_id, current_date, 'sin_probador');
+
+  delete from por_probar where id = v_por_probar_id;
 end;
 $$;
 
@@ -809,10 +842,13 @@ begin
 end;
 $$;
 
+-- drop porque cambia la forma de la tabla retornada (se agregó "motivo",
+-- para distinguir "Sin Stock" de "Sin Probador" en el cliente)
+drop function if exists public.listar_pendientes_probar(uuid);
 create or replace function public.listar_pendientes_probar(p_token uuid)
 returns table (
   id uuid, nombre_perfume text, referencia text, comentario text,
-  tienda_agotado_id uuid, tienda_nombre text, fecha date
+  tienda_agotado_id uuid, tienda_nombre text, fecha date, motivo text
 )
 language plpgsql security definer set search_path = public
 as $$
@@ -820,7 +856,7 @@ begin
   perform check_token(p_token);
   return query
     select pp.id, pp.nombre_perfume, pp.referencia, pp.comentario,
-           pp.tienda_agotado_id, t.nombre, pp.fecha
+           pp.tienda_agotado_id, t.nombre, pp.fecha, pp.motivo
     from pendientes_probar pp
     left join tiendas t on t.id = pp.tienda_agotado_id
     order by pp.fecha desc;
@@ -1149,7 +1185,7 @@ begin
     'pendientes_probar', (
       select coalesce(jsonb_agg(row_to_json(x) order by x.fecha desc), '[]'::jsonb)
       from (
-        select pp.id, pp.nombre_perfume, pp.referencia, pp.comentario, pp.fecha,
+        select pp.id, pp.nombre_perfume, pp.referencia, pp.comentario, pp.fecha, pp.motivo,
                t.nombre as tienda_nombre
         from pendientes_probar pp left join tiendas t on t.id = pp.tienda_agotado_id
       ) x
