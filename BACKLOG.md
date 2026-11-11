@@ -260,4 +260,21 @@ de nuevo por error.
 
 ---
 
+## 22. El precio se pierde al marcar "Sin Stock" / "Sin Probador"
+
+**Problema**: la tabla `pendientes_probar` (donde caen "Sin Stock" y
+"Sin Probador") no tiene columna de precio, y ni `marcar_agotado` ni
+`marcar_sin_probador` lo guardan al sacar el perfume de "Por Probar" —
+se pierde apenas se marca. El precio original no debería desaparecer
+nunca: sirve como referencia al comparar con otras tiendas mientras se
+busca dónde conseguirlo.
+
+**Idea de solución**: agregar `precio numeric` a `pendientes_probar`,
+que `marcar_agotado` y `marcar_sin_probador` lo traspasen desde la
+tienda donde estaba, mostrarlo en la tarjeta de Sin Stock/Sin Probador,
+y pre-cargarlo (editable) en el formulario de "Ya volvió"/"Ya tiene
+probador" como referencia al elegir la nueva tienda.
+
+---
+
 *(Agregar más ideas acá abajo a medida que surjan, en el mismo formato.)*
