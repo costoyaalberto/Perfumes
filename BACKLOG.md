@@ -237,4 +237,27 @@ ya existen filtradas en el cliente.
 
 ---
 
+## 21. Historial de tiendas descartadas en "Sin Probador" / "Sin Stock"
+
+**Problema**: hoy "Sin Probador" (y "Sin Stock") recuerdan una sola
+tienda (la última donde se buscó). Si un perfume queda "Sin Probador"
+en la Tienda A, y después se reasigna a la Tienda B porque ahí hay
+stock, y la Tienda B TAMPOCO tiene probador y se marca "Sin probador"
+de nuevo, se pierde el registro de que la Tienda A ya se había
+descartado — el campo se sobrescribe. Puede pasar (y pasó) que el
+usuario vuelva sin darse cuenta a una tienda que ya había descartado
+por falta de probador, repitiendo el viaje para nada.
+
+**Idea de solución**: en vez de un solo campo que se sobrescribe, llevar
+un historial acumulado de tiendas descartadas por perfume (tabla aparte
+tipo `pendientes_probar_historial` con tienda + motivo + fecha, o un
+array), que se va sumando cada vez que se reasigna a otra tienda y
+vuelve a quedar "Sin stock"/"Sin probador" ahí. Mostrar ese historial en
+la tarjeta (ej. "Ya descartado en: Tienda A (sin probador), Tienda B
+(sin stock)") y, si se puede, marcar o sacar esas tiendas ya descartadas
+del selector de "Ya tiene probador"/"Ya volvió" para no poder elegirlas
+de nuevo por error.
+
+---
+
 *(Agregar más ideas acá abajo a medida que surjan, en el mismo formato.)*
