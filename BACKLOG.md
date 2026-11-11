@@ -200,80 +200,53 @@ se parece cada perfume y qué tan recomendable es probarlo.
 
 ---
 
-## 19. Sumar "Sin Stock" y "Agotados" al final de "Exportar tienda"
+## ~~19. Sumar "Sin Stock" y "Agotados" al final de "Exportar tienda"~~ — Hecho (v22)
 
-**Problema**: antes de ir a una tienda (o a recorrer el mercado en
-general), sirve aprovechar la salida para también revisar si algún
-perfume de "Sin Stock" ya apareció en otro lado, o si algo de
-"Agotados" volvió a tener stock — hoy no hay forma de armar esa lista
-junto con la de "Por Probar", hay que copiarlos uno por uno a mano.
-
-**Idea de solución**: que "Exportar tienda" (item 18), además de los
-nombres de "Por Probar" agrupados por tienda elegida, agregue al final
-del mismo texto dos secciones más con los nombres de **Sin Stock** y
-**Agotados** completos (no se filtran por tienda, son listas generales)
-— mismo formato `# Encabezado` + nombres, uno por línea, que ya usa el
-resto. Definir al implementar si esas dos secciones van siempre
-incluidas o si conviene un checkbox para sumarlas opcionalmente.
+Implementado tal cual estaba pensado: al generar el texto de "Exportar
+tienda" se agregan al final (si no están vacías) dos secciones más,
+`# Sin Stock` y `# Agotados`, con los nombres completos de esas listas
+— sin filtrar por tienda. Se decidió sin checkbox: van siempre
+incluidas cuando tienen contenido, y se omiten directamente si están
+vacías (igual que ya hacía el resto de los exports).
 
 ---
 
-## 20. Buscador global (todas las listas a la vez)
+## ~~20. Buscador global (todas las listas a la vez)~~ — Hecho (v22)
 
-**Problema**: cada vista (Por Probar, Colección, Lista Negra, Pendientes
-de Compra, Sin Stock, Sin Probador, Agotados) tiene su propio buscador,
-pero no hay forma de preguntar "¿este perfume ya lo probé/agregué a
-algún lado?" sin ir pestaña por pestaña. Cuando hay duda si un perfume
-ya está anotado en alguna lista, hoy no hay cómo encontrarlo de una.
-
-**Idea de solución**: un campo de búsqueda único (¿en el header? ¿una
-pestaña aparte?) que busque por nombre/referencia en todas las tablas a
-la vez (Colección, Lista Negra, Por Probar, Pendientes de Compra, Sin
-Stock, Sin Probador, Agotados) y muestre los resultados agrupados por
-lista de origen, con algo para ir directo a esa tarjeta/pestaña.
-Definir al implementar si es una RPC nueva que consulta todas las
-tablas de una vez, o varias llamadas en paralelo a los `listar_*` que
-ya existen filtradas en el cliente.
+Implementado como un botón "🔍" en el header (no una pestaña aparte, para
+no competir con la tabbar) que abre un modal con un campo de búsqueda;
+busca por nombre/referencia en las 7 listas a la vez con una sola RPC
+nueva (`buscar_global`, un `UNION ALL`), y muestra los resultados
+agrupados con un chip indicando la lista de origen. Tocar un resultado
+cierra el modal y lleva directo a esa pestaña (no a la tarjeta exacta —
+para eso ya está el buscador propio de cada lista).
 
 ---
 
-## 21. Historial de tiendas descartadas en "Sin Probador" / "Sin Stock"
+## ~~21. Historial de tiendas descartadas en "Sin Probador" / "Sin Stock"~~ — Hecho (v22)
 
-**Problema**: hoy "Sin Probador" (y "Sin Stock") recuerdan una sola
-tienda (la última donde se buscó). Si un perfume queda "Sin Probador"
-en la Tienda A, y después se reasigna a la Tienda B porque ahí hay
-stock, y la Tienda B TAMPOCO tiene probador y se marca "Sin probador"
-de nuevo, se pierde el registro de que la Tienda A ya se había
-descartado — el campo se sobrescribe. Puede pasar (y pasó) que el
-usuario vuelva sin darse cuenta a una tienda que ya había descartado
-por falta de probador, repitiendo el viaje para nada.
-
-**Idea de solución**: en vez de un solo campo que se sobrescribe, llevar
-un historial acumulado de tiendas descartadas por perfume (tabla aparte
-tipo `pendientes_probar_historial` con tienda + motivo + fecha, o un
-array), que se va sumando cada vez que se reasigna a otra tienda y
-vuelve a quedar "Sin stock"/"Sin probador" ahí. Mostrar ese historial en
-la tarjeta (ej. "Ya descartado en: Tienda A (sin probador), Tienda B
-(sin stock)") y, si se puede, marcar o sacar esas tiendas ya descartadas
-del selector de "Ya tiene probador"/"Ya volvió" para no poder elegirlas
-de nuevo por error.
+Implementado con una tabla nueva `tiendas_descartadas` (nombre_perfume +
+tienda + motivo + fecha, identificada por nombre y no por FK, porque
+`pendientes_probar`/`por_probar` se borran y recrean en cada ciclo) que
+`marcar_agotado` y `marcar_sin_probador` van alimentando. En el selector
+de tienda de "Ya volvió"/"Ya tiene probador" (RPC `listar_tiendas_descartadas`),
+las tiendas ya descartadas para ese perfume aparecen deshabilitadas con
+el motivo y la fecha — salvo la tienda preseleccionada (la actual), que
+queda seleccionable igual por si se la quiere confirmar de nuevo ahí
+mismo. No se agregó el historial visible en la tarjeta (se decidió que
+alcanza con resolverlo en el selector, que es donde se puede repetir el
+error).
 
 ---
 
-## 22. El precio se pierde al marcar "Sin Stock" / "Sin Probador"
+## ~~22. El precio se pierde al marcar "Sin Stock" / "Sin Probador"~~ — Hecho (v22)
 
-**Problema**: la tabla `pendientes_probar` (donde caen "Sin Stock" y
-"Sin Probador") no tiene columna de precio, y ni `marcar_agotado` ni
-`marcar_sin_probador` lo guardan al sacar el perfume de "Por Probar" —
-se pierde apenas se marca. El precio original no debería desaparecer
-nunca: sirve como referencia al comparar con otras tiendas mientras se
-busca dónde conseguirlo.
-
-**Idea de solución**: agregar `precio numeric` a `pendientes_probar`,
-que `marcar_agotado` y `marcar_sin_probador` lo traspasen desde la
-tienda donde estaba, mostrarlo en la tarjeta de Sin Stock/Sin Probador,
-y pre-cargarlo (editable) en el formulario de "Ya volvió"/"Ya tiene
-probador" como referencia al elegir la nueva tienda.
+Implementado tal cual estaba pensado: columna `precio` agregada a
+`pendientes_probar`, traspasada automáticamente por `marcar_agotado` y
+`marcar_sin_probador` desde la tienda donde estaba el perfume. Se
+muestra como chip en la tarjeta de Sin Stock/Sin Probador, y queda
+pre-cargado (editable) en el formulario de "Ya volvió"/"Ya tiene
+probador" al elegir la nueva tienda.
 
 ---
 

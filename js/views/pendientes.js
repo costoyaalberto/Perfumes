@@ -2,7 +2,7 @@ import { api } from '../api.js';
 import { getTiendas } from '../store.js';
 import { openModal, closeModal, confirmDialog } from '../modal.js';
 import { storeAndPriceFieldsHtml, handleYaLoCompre } from './porProbar.js';
-import { formatFecha, escapeHtml, normalizarNombre, toast } from '../utils.js';
+import { formatFecha, formatCLP, escapeHtml, normalizarNombre, toast } from '../utils.js';
 
 const content = document.getElementById('pendientes-content');
 const contentProbar = document.getElementById('pendientes-probar-content');
@@ -193,6 +193,7 @@ function cardHtmlProbar(p) {
       ${p.referencia ? `<div class="card-ref">Ref: ${escapeHtml(p.referencia)}</div>` : ''}
       <div class="card-store-line">📍 Sin stock en: <strong>${escapeHtml(p.tienda_nombre || '—')}</strong></div>
       <div class="card-meta">
+        ${p.precio != null ? `<span class="chip chip-price">${formatCLP(p.precio)}</span>` : ''}
         <span class="chip chip-price">${formatFecha(p.fecha)}</span>
       </div>
       ${p.comentario ? `<div class="card-comment">${escapeHtml(p.comentario)}</div>` : ''}
@@ -212,6 +213,7 @@ function cardHtmlSinProbador(p) {
       ${p.referencia ? `<div class="card-ref">Ref: ${escapeHtml(p.referencia)}</div>` : ''}
       <div class="card-store-line">🧪 Sin probador en: <strong>${escapeHtml(p.tienda_nombre || '—')}</strong></div>
       <div class="card-meta">
+        ${p.precio != null ? `<span class="chip chip-price">${formatCLP(p.precio)}</span>` : ''}
         <span class="chip chip-price">${formatFecha(p.fecha)}</span>
       </div>
       ${p.comentario ? `<div class="card-comment">${escapeHtml(p.comentario)}</div>` : ''}
@@ -424,18 +426,25 @@ async function handleEditarPendienteProbar(item) {
 }
 
 async function handleVolvio(item) {
-  const tiendas = (await getTiendas()).filter((t) => t.activa);
+  const [todasTiendas, descartadas] = await Promise.all([
+    getTiendas(),
+    api.listarTiendasDescartadas(item.nombre_perfume),
+  ]);
+  const tiendas = todasTiendas.filter((t) => t.activa);
   if (!tiendas.length) {
     toast('Primero agrega al menos una tienda activa en la pestaña Tiendas', true);
     return;
   }
+  const descartadasPorTienda = new Map(descartadas.map((d) => [d.tienda_id, d]));
+  descartadasPorTienda.delete(item.tienda_agotado_id); // es la tienda preseleccionada, no tiene sentido deshabilitarla
   const esSinProbador = item.motivo === 'sin_probador';
   const el = openModal(`
     <h3>${esSinProbador ? 'Ya tiene probador' : 'Volvió a aparecer'} — ${escapeHtml(item.nombre_perfume)}</h3>
     <p class="import-format">${esSinProbador ? 'No tenía probador' : 'Estaba sin stock'} en <strong>${escapeHtml(item.tienda_nombre || '—')}</strong> —
-      dejamos esa tienda preseleccionada por si fue ahí mismo; cambia la opción si fue en otro lado.</p>
+      dejamos esa tienda preseleccionada por si fue ahí mismo; cambia la opción si fue en otro lado.
+      ${descartadasPorTienda.size ? ' Las tiendas marcadas "ya descartada" ya se habían revisado antes sin éxito.' : ''}</p>
     <form id="form-volvio">
-      ${storeAndPriceFieldsHtml(tiendas, { tienda_id: item.tienda_agotado_id, comentario: item.comentario })}
+      ${storeAndPriceFieldsHtml(tiendas, { tienda_id: item.tienda_agotado_id, precio: item.precio, comentario: item.comentario }, false, descartadasPorTienda)}
       <div class="modal-actions">
         <button type="button" class="btn btn-secondary" data-action="cancel">Cancelar</button>
         <button type="submit" class="btn btn-primary">Volver a Por Probar</button>

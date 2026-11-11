@@ -71,6 +71,7 @@ export const api = {
   eliminarPendienteProbar: (p_pendiente_probar_id) => rpc('eliminar_pendiente_probar', { p_pendiente_probar_id }),
   editarPendienteProbar: (args) => rpc('editar_pendiente_probar', args),
   marcarAgotadoGeneral: (p_pendiente_probar_id) => rpc('marcar_agotado_general', { p_pendiente_probar_id }),
+  listarTiendasDescartadas: (p_nombre_perfume) => rpc('listar_tiendas_descartadas', { p_nombre_perfume }),
 
   listarAgotados: () => rpc('listar_agotados'),
   editarAgotado: (args) => rpc('editar_agotado', args),
@@ -87,6 +88,8 @@ export const api = {
   eliminarDeListaNegra: (p_lista_negra_id) => rpc('eliminar_de_lista_negra', { p_lista_negra_id }),
 
   listarCandidatosDuplicado: () => rpc('listar_candidatos_duplicado'),
+
+  buscarGlobal: (p_query) => rpc('buscar_global', { p_query }),
 
   exportarDatos: () => rpc('exportar_datos'),
   generarReporteSeguimiento: (p_horas) => rpc('generar_reporte_seguimiento', { p_horas }),

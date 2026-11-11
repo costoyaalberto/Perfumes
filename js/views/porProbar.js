@@ -2,7 +2,7 @@ import { api } from '../api.js';
 import { getTiendas } from '../store.js';
 import { openModal, closeModal, confirmDialog } from '../modal.js';
 import { buscarCoincidencias, renderCoincidenciasHtml } from '../duplicados.js';
-import { formatCLP, escapeHtml, normalizarNombre, toast, toastConAccion } from '../utils.js';
+import { formatCLP, formatFecha, escapeHtml, normalizarNombre, toast, toastConAccion } from '../utils.js';
 
 const content = document.getElementById('por-probar-content');
 const searchInput = document.getElementById('buscar-por-probar');
@@ -614,7 +614,7 @@ async function handleAgregarTienda(row) {
   });
 }
 
-export function storeAndPriceFieldsHtml(tiendas, selected = {}, mostrarTester = false) {
+export function storeAndPriceFieldsHtml(tiendas, selected = {}, mostrarTester = false, descartadasPorTienda = new Map()) {
   const sel = {
     tienda_id: selected.tienda_id || '',
     precio: selected.precio ?? '',
@@ -627,7 +627,12 @@ export function storeAndPriceFieldsHtml(tiendas, selected = {}, mostrarTester = 
     <div class="form-row">
       <label>Tienda</label>
       <select name="tienda_id" required>
-        ${tiendas.map((t) => `<option value="${t.id}" ${t.id === sel.tienda_id ? 'selected' : ''}>${escapeHtml(t.nombre)}</option>`).join('')}
+        ${tiendas.map((t) => {
+          const descarte = descartadasPorTienda.get(t.id);
+          if (!descarte) return `<option value="${t.id}" ${t.id === sel.tienda_id ? 'selected' : ''}>${escapeHtml(t.nombre)}</option>`;
+          const motivoLabel = descarte.motivo === 'sin_probador' ? 'sin probador' : 'sin stock';
+          return `<option value="${t.id}" disabled>${escapeHtml(t.nombre)} — ya descartada (${motivoLabel}, ${formatFecha(descarte.fecha)})</option>`;
+        }).join('')}
       </select>
     </div>
     <div class="form-row-inline">

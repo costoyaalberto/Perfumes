@@ -2,7 +2,7 @@
 // de index.html). Si el archivo no cambia de bytes, el navegador nunca
 // detecta que hay un service worker nuevo y sigue sirviendo la caché vieja
 // para siempre, sin importar cuántas veces se recargue la página.
-const CACHE_NAME = 'perfumes-tracker-v21';
+const CACHE_NAME = 'perfumes-tracker-v22';
 const APP_SHELL = [
   './',
   './index.html',
@@ -15,6 +15,7 @@ const APP_SHELL = [
   './js/modal.js',
   './js/store.js',
   './js/duplicados.js',
+  './js/buscarGlobal.js',
   './js/utils.js',
   './js/views/porProbar.js',
   './js/views/pendientes.js',

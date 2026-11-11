@@ -172,6 +172,24 @@ alter table pendientes_compra add column if not exists es_tester boolean not nul
 alter table pendientes_probar add column if not exists motivo text not null default 'sin_stock'
   check (motivo in ('sin_stock', 'sin_probador'));
 
+-- El precio nunca debería perderse al salir de "Por Probar": sirve de
+-- referencia al comparar con otras tiendas mientras se busca el perfume.
+alter table pendientes_probar add column if not exists precio numeric;
+
+-- Historial de tiendas ya descartadas (sin stock o sin probador) por
+-- perfume, para no volver a asignarlo por error a una tienda que ya se
+-- sabía sin stock/sin probador. Se identifica por nombre (no por FK a
+-- pendientes_probar/por_probar, que se borran y recrean en cada ciclo).
+create table if not exists tiendas_descartadas (
+  id uuid primary key default gen_random_uuid(),
+  nombre_perfume text not null,
+  tienda_id uuid references tiendas(id),
+  motivo text not null check (motivo in ('sin_stock', 'sin_probador')),
+  fecha date not null default current_date,
+  created_at timestamptz not null default now()
+);
+alter table tiendas_descartadas enable row level security;
+
 -- ---------------------------------------------------------------------
 -- 2. BLOQUEO DE ACCESO DIRECTO
 --    RLS activado y SIN políticas para anon/authenticated en ninguna
@@ -441,11 +459,12 @@ declare
   v_nombre text;
   v_referencia text;
   v_comentario text;
+  v_precio numeric;
 begin
   perform check_token(p_token);
 
-  select ppt.por_probar_id, ppt.tienda_id, pp.nombre_perfume, pp.referencia, ppt.comentario
-    into v_por_probar_id, v_tienda_id, v_nombre, v_referencia, v_comentario
+  select ppt.por_probar_id, ppt.tienda_id, pp.nombre_perfume, pp.referencia, ppt.comentario, ppt.precio
+    into v_por_probar_id, v_tienda_id, v_nombre, v_referencia, v_comentario, v_precio
   from por_probar_tienda ppt
   join por_probar pp on pp.id = ppt.por_probar_id
   where ppt.id = p_por_probar_tienda_id;
@@ -454,8 +473,12 @@ begin
     raise exception 'No se encontró el registro';
   end if;
 
-  insert into pendientes_probar (nombre_perfume, referencia, comentario, tienda_agotado_id, fecha, motivo)
-    values (v_nombre, v_referencia, v_comentario, v_tienda_id, current_date, 'sin_probador');
+  insert into pendientes_probar (nombre_perfume, referencia, comentario, tienda_agotado_id, fecha, motivo, precio)
+    values (v_nombre, v_referencia, v_comentario, v_tienda_id, current_date, 'sin_probador', v_precio);
+
+  delete from tiendas_descartadas where lower(trim(nombre_perfume)) = lower(trim(v_nombre)) and tienda_id = v_tienda_id;
+  insert into tiendas_descartadas (nombre_perfume, tienda_id, motivo, fecha)
+    values (v_nombre, v_tienda_id, 'sin_probador', current_date);
 
   delete from por_probar where id = v_por_probar_id;
 end;
@@ -735,11 +758,12 @@ declare
   v_nombre text;
   v_referencia text;
   v_comentario text;
+  v_precio numeric;
 begin
   perform check_token(p_token);
 
-  select ppt.por_probar_id, ppt.tienda_id, pp.nombre_perfume, pp.referencia, ppt.comentario
-    into v_por_probar_id, v_tienda_id, v_nombre, v_referencia, v_comentario
+  select ppt.por_probar_id, ppt.tienda_id, pp.nombre_perfume, pp.referencia, ppt.comentario, ppt.precio
+    into v_por_probar_id, v_tienda_id, v_nombre, v_referencia, v_comentario, v_precio
   from por_probar_tienda ppt
   join por_probar pp on pp.id = ppt.por_probar_id
   where ppt.id = p_por_probar_tienda_id;
@@ -748,8 +772,12 @@ begin
     raise exception 'No se encontró el registro';
   end if;
 
-  insert into pendientes_probar (nombre_perfume, referencia, comentario, tienda_agotado_id, fecha)
-    values (v_nombre, v_referencia, v_comentario, v_tienda_id, current_date);
+  insert into pendientes_probar (nombre_perfume, referencia, comentario, tienda_agotado_id, fecha, precio)
+    values (v_nombre, v_referencia, v_comentario, v_tienda_id, current_date, v_precio);
+
+  delete from tiendas_descartadas where lower(trim(nombre_perfume)) = lower(trim(v_nombre)) and tienda_id = v_tienda_id;
+  insert into tiendas_descartadas (nombre_perfume, tienda_id, motivo, fecha)
+    values (v_nombre, v_tienda_id, 'sin_stock', current_date);
 
   delete from por_probar where id = v_por_probar_id;
 end;
@@ -842,13 +870,13 @@ begin
 end;
 $$;
 
--- drop porque cambia la forma de la tabla retornada (se agregó "motivo",
--- para distinguir "Sin Stock" de "Sin Probador" en el cliente)
+-- drop porque cambia la forma de la tabla retornada (se agregó "motivo" y
+-- "precio", este último para que no se pierda al salir de "Por Probar")
 drop function if exists public.listar_pendientes_probar(uuid);
 create or replace function public.listar_pendientes_probar(p_token uuid)
 returns table (
   id uuid, nombre_perfume text, referencia text, comentario text,
-  tienda_agotado_id uuid, tienda_nombre text, fecha date, motivo text
+  tienda_agotado_id uuid, tienda_nombre text, fecha date, motivo text, precio numeric
 )
 language plpgsql security definer set search_path = public
 as $$
@@ -856,10 +884,27 @@ begin
   perform check_token(p_token);
   return query
     select pp.id, pp.nombre_perfume, pp.referencia, pp.comentario,
-           pp.tienda_agotado_id, t.nombre, pp.fecha, pp.motivo
+           pp.tienda_agotado_id, t.nombre, pp.fecha, pp.motivo, pp.precio
     from pendientes_probar pp
     left join tiendas t on t.id = pp.tienda_agotado_id
     order by pp.fecha desc;
+end;
+$$;
+
+-- Historial de tiendas ya descartadas para un perfume (por nombre), para
+-- que el cliente pueda marcar/evitar esas tiendas al reasignarlo.
+create or replace function public.listar_tiendas_descartadas(p_token uuid, p_nombre_perfume text)
+returns table (tienda_id uuid, tienda_nombre text, motivo text, fecha date)
+language plpgsql security definer set search_path = public
+as $$
+begin
+  perform check_token(p_token);
+  return query
+    select td.tienda_id, t.nombre, td.motivo, td.fecha
+    from tiendas_descartadas td
+    join tiendas t on t.id = td.tienda_id
+    where lower(trim(td.nombre_perfume)) = lower(trim(p_nombre_perfume))
+    order by td.fecha desc;
 end;
 $$;
 
@@ -1185,7 +1230,7 @@ begin
     'pendientes_probar', (
       select coalesce(jsonb_agg(row_to_json(x) order by x.fecha desc), '[]'::jsonb)
       from (
-        select pp.id, pp.nombre_perfume, pp.referencia, pp.comentario, pp.fecha, pp.motivo,
+        select pp.id, pp.nombre_perfume, pp.referencia, pp.comentario, pp.fecha, pp.motivo, pp.precio,
                t.nombre as tienda_nombre
         from pendientes_probar pp left join tiendas t on t.id = pp.tienda_agotado_id
       ) x
@@ -1208,6 +1253,57 @@ begin
     )
   ) into v_result;
   return v_result;
+end;
+$$;
+
+-- Busca por nombre/referencia en todas las listas a la vez (una sola
+-- RPC con UNION ALL, en vez de 7 llamadas en paralelo), para encontrar
+-- rápido si un perfume ya está anotado en algún lado. "origen" identifica
+-- la lista para que el cliente agrupe y sepa a qué pestaña ir.
+create or replace function public.buscar_global(p_token uuid, p_query text)
+returns table (
+  origen text, id uuid, nombre_perfume text, referencia text,
+  tienda_nombre text, fecha date, extra text
+)
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_q text;
+begin
+  perform check_token(p_token);
+  if trim(coalesce(p_query, '')) = '' then
+    return;
+  end if;
+  v_q := '%' || trim(p_query) || '%';
+
+  return query
+    select 'coleccion'::text, c.id, c.nombre_perfume, c.referencia, t.nombre, c.fecha_compra, null::text
+    from coleccion c left join tiendas t on t.id = c.tienda_compra_id
+    where c.nombre_perfume ilike v_q or coalesce(c.referencia, '') ilike v_q
+    union all
+    select 'lista_negra'::text, ln.id, ln.nombre_perfume, ln.referencia, t.nombre, ln.fecha, ln.motivo
+    from lista_negra ln left join tiendas t on t.id = ln.tienda_probada_id
+    where ln.nombre_perfume ilike v_q or coalesce(ln.referencia, '') ilike v_q
+    union all
+    select 'por_probar'::text, pp.id, pp.nombre_perfume, pp.referencia, t.nombre, null::date, null::text
+    from por_probar pp
+    join por_probar_tienda ppt on ppt.por_probar_id = pp.id
+    join tiendas t on t.id = ppt.tienda_id
+    where pp.nombre_perfume ilike v_q or coalesce(pp.referencia, '') ilike v_q
+    union all
+    select 'pendientes_compra'::text, pc.id, pc.nombre_perfume, pc.referencia, t.nombre, pc.fecha_prueba, null::text
+    from pendientes_compra pc left join tiendas t on t.id = pc.tienda_probada_id
+    where pc.nombre_perfume ilike v_q or coalesce(pc.referencia, '') ilike v_q
+    union all
+    select (case when pp2.motivo = 'sin_probador' then 'sin_probador' else 'sin_stock' end)::text,
+           pp2.id, pp2.nombre_perfume, pp2.referencia, t.nombre, pp2.fecha, null::text
+    from pendientes_probar pp2 left join tiendas t on t.id = pp2.tienda_agotado_id
+    where pp2.nombre_perfume ilike v_q or coalesce(pp2.referencia, '') ilike v_q
+    union all
+    select 'agotados'::text, a.id, a.nombre_perfume, a.referencia, null::text, a.fecha, null::text
+    from agotados a
+    where a.nombre_perfume ilike v_q or coalesce(a.referencia, '') ilike v_q
+    order by 1, 3;
 end;
 $$;
 
@@ -1409,12 +1505,13 @@ revoke all on function
   public.listar_pendientes_compra, public.ya_lo_compre,
   public.editar_pendiente_compra, public.eliminar_pendiente_compra,
   public.listar_pendientes_probar, public.volver_a_por_probar, public.eliminar_pendiente_probar,
-  public.editar_pendiente_probar,
+  public.editar_pendiente_probar, public.listar_tiendas_descartadas,
   public.marcar_agotado_general, public.listar_agotados, public.editar_agotado,
   public.revisar_agotado, public.eliminar_agotado,
   public.listar_coleccion, public.eliminar_de_coleccion, public.listar_lista_negra,
   public.editar_lista_negra, public.eliminar_de_lista_negra,
   public.listar_candidatos_duplicado, public.exportar_datos, public.generar_reporte_seguimiento,
+  public.buscar_global,
   public.importar_coleccion, public.importar_lista_negra, public.importar_por_probar,
   public.actualizar_referencias_coleccion, public.actualizar_referencias_lista_negra
   from public;
@@ -1447,6 +1544,7 @@ grant execute on function public.listar_pendientes_probar(uuid) to anon;
 grant execute on function public.volver_a_por_probar(uuid, uuid, uuid, numeric, text, text, text) to anon;
 grant execute on function public.eliminar_pendiente_probar(uuid, uuid) to anon;
 grant execute on function public.editar_pendiente_probar(uuid, uuid, text, text, text) to anon;
+grant execute on function public.listar_tiendas_descartadas(uuid, text) to anon;
 grant execute on function public.marcar_agotado_general(uuid, uuid) to anon;
 grant execute on function public.listar_agotados(uuid) to anon;
 grant execute on function public.editar_agotado(uuid, uuid, text, text, text) to anon;
@@ -1458,6 +1556,7 @@ grant execute on function public.listar_lista_negra(uuid) to anon;
 grant execute on function public.editar_lista_negra(uuid, uuid, text, text, text, text) to anon;
 grant execute on function public.eliminar_de_lista_negra(uuid, uuid) to anon;
 grant execute on function public.listar_candidatos_duplicado(uuid) to anon;
+grant execute on function public.buscar_global(uuid, text) to anon;
 grant execute on function public.generar_reporte_seguimiento(uuid, int) to anon;
 grant execute on function public.importar_coleccion(uuid, jsonb) to anon;
 grant execute on function public.importar_lista_negra(uuid, jsonb) to anon;

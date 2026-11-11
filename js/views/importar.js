@@ -93,8 +93,13 @@ document.getElementById('btn-exportar-tienda').addEventListener('click', async (
     }
     const seleccionadas = tiendas.filter((t) => idsSeleccionados.includes(t.id));
     try {
-      const rows = await api.listarPorProbar();
-      const texto = buildExportTiendaTexto(seleccionadas, rows);
+      const [rows, pendientesProbar, agotados] = await Promise.all([
+        api.listarPorProbar(),
+        api.listarPendientesProbar(),
+        api.listarAgotados(),
+      ]);
+      const sinStock = pendientesProbar.filter((p) => p.motivo !== 'sin_probador');
+      const texto = buildExportTiendaTexto(seleccionadas, rows, sinStock, agotados);
       closeModal();
       mostrarExportTienda(seleccionadas.length, texto);
     } catch (err) {
@@ -103,14 +108,21 @@ document.getElementById('btn-exportar-tienda').addEventListener('click', async (
   });
 });
 
-function buildExportTiendaTexto(tiendasSeleccionadas, rows) {
+function buildExportTiendaTexto(tiendasSeleccionadas, rows, sinStock, agotados) {
   const intro = 'Estos son los perfumes que tengo pendientes de probar, agrupados por tienda. Para cada uno, decime a qué perfume conocido se parece o qué sabes de él, y qué tan recomendable es probarlo.';
   const secciones = tiendasSeleccionadas.map((t) => {
     const nombres = rows.filter((r) => r.tienda_id === t.id).map((r) => r.nombre_perfume);
     const lista = nombres.length ? nombres.join('\n') : '(sin perfumes por probar acá)';
     return `# ${t.nombre}\n${lista}`;
   });
-  return `${intro}\n\n${secciones.join('\n\n')}`;
+  const partes = [intro, ...secciones];
+  if (sinStock.length) {
+    partes.push(`# Sin Stock\n${sinStock.map((p) => p.nombre_perfume).join('\n')}`);
+  }
+  if (agotados.length) {
+    partes.push(`# Agotados\n${agotados.map((p) => p.nombre_perfume).join('\n')}`);
+  }
+  return partes.join('\n\n');
 }
 
 document.getElementById('btn-exportar-referencias').addEventListener('click', async () => {

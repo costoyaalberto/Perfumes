@@ -1,5 +1,6 @@
 import { haySesion, initLogin, cerrarSesion } from './auth.js';
 import { toast } from './utils.js';
+import { initBuscarGlobal } from './buscarGlobal.js';
 import * as porProbar from './views/porProbar.js';
 import * as pendientes from './views/pendientes.js';
 import * as coleccion from './views/coleccion.js';
@@ -37,6 +38,8 @@ async function goTo(route) {
 document.querySelectorAll('.tab-btn').forEach((btn) => {
   btn.addEventListener('click', () => goTo(btn.dataset.route));
 });
+
+initBuscarGlobal();
 
 document.getElementById('btn-logout').addEventListener('click', () => {
   if (confirm('¿Cerrar sesión en este dispositivo? Deberás ingresar el PIN nuevamente.')) {
