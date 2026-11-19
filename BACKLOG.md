@@ -250,4 +250,32 @@ probador" al elegir la nueva tienda.
 
 ---
 
+## 23. Registrar la repisa donde está guardado cada perfume de Colección
+
+**Problema**: con más de 170 perfumes repartidos en 6 repisas físicas,
+hoy no hay forma de registrar ni consultar dónde está guardado cada uno
+— hay que recordarlo o buscarlo a ojo. La repisa no se asigna en el
+momento de comprar (el flujo real es: "Ya lo compré" → más adelante se
+exporta el listado de Colección, se le pide a una IA externa que la
+asigne con la info/fotos que el usuario ya tiene, y se pega la
+respuesta de vuelta) — no sirve un selector dentro de "Ya lo compré".
+
+**Idea de solución**: catálogo fijo de repisas (tabla nueva `repisas`,
+mismo patrón que `tiendas`: editable, sin texto libre, para evitar que
+la misma repisa quede escrita de formas distintas entre 170 perfumes) +
+columna `repisa_id` en `coleccion`. Reusar el patrón ya implementado
+para "Exportar referencias faltantes" (item 13): un botón "📦 Exportar
+para asignar repisas" en Datos que arma `id|nombre` de los perfumes de
+Colección sin repisa, y una sección "Actualizar repisas" (gemela a
+"Actualizar referencias") donde se pega la respuesta de la IA
+(`id|repisa`) y actualiza en lote — matcheando el nombre de repisa
+contra el catálogo (mismo matching por nombre normalizado que ya se usa
+al importar tiendas en "Por Probar"/"Lista Negra"). Así cada compra
+nueva simplemente vuelve a aparecer sin repisa en el próximo export,
+sin cambiar el flujo actual de "Ya lo compré". De paso, sumar un
+filtro/agrupador por repisa en la pestaña Colección para poder ubicar
+un perfume rápido.
+
+---
+
 *(Agregar más ideas acá abajo a medida que surjan, en el mismo formato.)*
