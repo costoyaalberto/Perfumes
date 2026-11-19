@@ -264,17 +264,46 @@ respuesta de vuelta) — no sirve un selector dentro de "Ya lo compré".
 mismo patrón que `tiendas`: editable, sin texto libre, para evitar que
 la misma repisa quede escrita de formas distintas entre 170 perfumes) +
 columna `repisa_id` en `coleccion`. Reusar el patrón ya implementado
-para "Exportar referencias faltantes" (item 13): un botón "📦 Exportar
-para asignar repisas" en Datos que arma `id|nombre` de los perfumes de
-Colección sin repisa, y una sección "Actualizar repisas" (gemela a
-"Actualizar referencias") donde se pega la respuesta de la IA
-(`id|repisa`) y actualiza en lote — matcheando el nombre de repisa
-contra el catálogo (mismo matching por nombre normalizado que ya se usa
-al importar tiendas en "Por Probar"/"Lista Negra"). Así cada compra
-nueva simplemente vuelve a aparecer sin repisa en el próximo export,
-sin cambiar el flujo actual de "Ya lo compré". De paso, sumar un
-filtro/agrupador por repisa en la pestaña Colección para poder ubicar
-un perfume rápido.
+para "Exportar referencias faltantes" (item 13): un botón en Datos que
+arma `id|nombre` de los perfumes de Colección, y una sección de
+"Actualizar" donde se pega la respuesta de la IA y actualiza en lote —
+matcheando el nombre de repisa contra el catálogo (mismo matching por
+nombre normalizado que ya se usa al importar tiendas en "Por Probar"/
+"Lista Negra"). De paso, sumar un filtro/agrupador por repisa en la
+pestaña Colección para poder ubicar un perfume rápido.
+
+**Nota (nov. 2026)**: la carga inicial de este campo se hace en conjunto
+con la del item 24 (Nota 1-7) — ver ahí el formato combinado
+`id|repisa|nota` para no tener que armar dos cargas separadas para los
+170+ perfumes existentes.
+
+---
+
+## 24. Nota (1-7) de cada perfume de Colección
+
+**Problema**: a los pocos días de probar un perfume recién comprado, el
+usuario le pone una nota del 1 al 7 — define si va adelante o atrás en
+la repisa, y con el tiempo refleja sus gustos. Hoy no hay dónde
+guardarla, y Colección ni siquiera tiene edición todavía (solo
+"Eliminar"). A diferencia de la repisa (item 23), la nota la decide el
+usuario mismo después de probarlo unos días, no una IA externa.
+
+**Idea de solución**: columna `nota numeric` (1-7) en `coleccion`,
+habilitar por primera vez tarjeta clickeable → modal de editar
+(nombre/referencia/comentario/nota), mostrarla como chip en la tarjeta,
+y sumar un tercer modo al botón de orden de Colección ("Ordenar: Nota",
+de mayor a menor). Para una compra nueva, se carga perfume por perfume
+desde ese modal de editar cuando el usuario decide la nota.
+
+**Carga inicial (170+ perfumes existentes)**: no tiene sentido cargarla
+uno por uno a mano. Se decidió combinarla con la carga inicial de
+repisas (item 23) en un solo ciclo exportar/pegar: un botón en Datos
+arma `id|nombre` de todos los perfumes de Colección, el usuario le pide
+a su IA el informe ya armado en formato `id|repisa|nota` (a partir de lo
+que ya tiene decidido/anotado), y se pega la respuesta en una sola
+sección de "Actualizar repisas y notas" que actualiza ambos campos en
+lote (cualquiera de los dos puede venir vacío/"?" para omitirlo en esa
+línea, mismo criterio tolerante que ya usa "Actualizar referencias").
 
 ---
 
