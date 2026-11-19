@@ -12,3 +12,16 @@ export async function getTiendas(forceRefresh = false) {
 export function invalidateTiendas() {
   tiendasCache = null;
 }
+
+let repisasCache = null;
+
+export async function getRepisas(forceRefresh = false) {
+  if (!repisasCache || forceRefresh) {
+    repisasCache = await api.listarRepisas();
+  }
+  return repisasCache;
+}
+
+export function invalidateRepisas() {
+  repisasCache = null;
+}

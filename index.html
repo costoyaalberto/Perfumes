@@ -32,7 +32,7 @@
     <h1>🧴 Perfumes</h1>
     <div class="topbar-right">
       <button id="btn-buscar-global" class="btn-icon" title="Buscar en todo">🔍</button>
-      <span class="version-tag">v22</span>
+      <span class="version-tag">v23</span>
       <button id="btn-logout" class="btn-icon" title="Cerrar sesión en este dispositivo">⏻</button>
     </div>
   </header>
@@ -100,6 +100,10 @@
       </div>
       <div class="filter-row">
         <button id="btn-orden-coleccion" class="btn btn-outline btn-sm toggle-btn">Ordenar: Nombre</button>
+        <select id="filtro-repisa-coleccion" class="btn btn-outline btn-sm">
+          <option value="">Todas las repisas</option>
+        </select>
+        <button id="btn-repisas" class="btn btn-outline btn-sm">🗄 Repisas</button>
       </div>
       <div id="coleccion-content" class="content"></div>
     </section>
@@ -130,9 +134,12 @@
         <button id="btn-reporte-seguimiento" class="btn btn-outline btn-block">📋 Generar reporte de novedades</button>
         <button id="btn-exportar-tienda" class="btn btn-outline btn-block">🔍 Exportar tienda</button>
         <button id="btn-exportar-referencias" class="btn btn-outline btn-block">🧬 Exportar referencias faltantes</button>
+        <button id="btn-exportar-repisas-notas" class="btn btn-outline btn-block">📦 Exportar para asignar repisas y notas</button>
       </div>
       <div class="view-header"><h2 style="font-size:1.05rem;">Actualizar referencias (Colección / Lista Negra)</h2></div>
       <div id="actualizar-referencias-content" class="content"></div>
+      <div class="view-header"><h2 style="font-size:1.05rem;">Actualizar repisas y notas (Colección)</h2></div>
+      <div id="actualizar-repisas-notas-content" class="content"></div>
       <div class="view-header"><h2 style="font-size:1.05rem;">Importar datos</h2></div>
       <div id="importar-content" class="content"></div>
     </section>

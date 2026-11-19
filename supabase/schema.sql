@@ -190,6 +190,21 @@ create table if not exists tiendas_descartadas (
 );
 alter table tiendas_descartadas enable row level security;
 
+-- Repisas físicas donde se guarda cada perfume de la Colección (catálogo
+-- fijo, mismo patrón que tiendas, para que el nombre no quede escrito de
+-- formas distintas entre 170+ perfumes).
+create table if not exists repisas (
+  id uuid primary key default gen_random_uuid(),
+  nombre text not null unique,
+  created_at timestamptz not null default now()
+);
+alter table repisas enable row level security;
+
+alter table coleccion add column if not exists repisa_id uuid references repisas(id);
+-- Nota 1-7 que el usuario le pone a cada perfume a los pocos días de
+-- probarlo; define el orden en la repisa y refleja sus gustos.
+alter table coleccion add column if not exists nota numeric check (nota >= 1 and nota <= 7);
+
 -- ---------------------------------------------------------------------
 -- 2. BLOQUEO DE ACCESO DIRECTO
 --    RLS activado y SIN políticas para anon/authenticated en ninguna
@@ -1065,17 +1080,47 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------
--- 7. COLECCIÓN / LISTA NEGRA
---    Mayormente de solo lectura desde la app, salvo eliminar_de_coleccion
---    (para devoluciones: producto roto/defectuoso, etc, pasadas las 48h
---    en que ya no sirve "Deshacer").
+-- 6b. REPISAS
 -- ---------------------------------------------------------------------
 
+create or replace function public.listar_repisas(p_token uuid)
+returns setof repisas
+language plpgsql security definer set search_path = public
+as $$
+begin
+  perform check_token(p_token);
+  return query select * from repisas order by nombre;
+end;
+$$;
+
+create or replace function public.crear_repisa(p_token uuid, p_nombre text)
+returns repisas
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_row repisas;
+begin
+  perform check_token(p_token);
+  insert into repisas (nombre) values (trim(p_nombre)) returning * into v_row;
+  return v_row;
+end;
+$$;
+
+-- ---------------------------------------------------------------------
+-- 7. COLECCIÓN / LISTA NEGRA
+--    Colección admite editar (nombre/referencia/comentario/repisa/nota)
+--    además de eliminar_de_coleccion (para devoluciones: producto roto/
+--    defectuoso, etc, pasadas las 48h en que ya no sirve "Deshacer").
+-- ---------------------------------------------------------------------
+
+-- drop porque cambia la forma de la tabla retornada (se agregaron
+-- "repisa_id"/"repisa_nombre" y "nota")
+drop function if exists public.listar_coleccion(uuid);
 create or replace function public.listar_coleccion(p_token uuid)
 returns table (
   id uuid, nombre_perfume text, referencia text, comentario text,
   tienda_compra_id uuid, tienda_nombre text, canal_compra text,
-  precio numeric, fecha_compra date
+  precio numeric, fecha_compra date, repisa_id uuid, repisa_nombre text, nota numeric
 )
 language plpgsql security definer set search_path = public
 as $$
@@ -1083,10 +1128,56 @@ begin
   perform check_token(p_token);
   return query
     select c.id, c.nombre_perfume, c.referencia, c.comentario,
-           c.tienda_compra_id, t.nombre, c.canal_compra, c.precio, c.fecha_compra
+           c.tienda_compra_id, t.nombre, c.canal_compra, c.precio, c.fecha_compra,
+           c.repisa_id, r.nombre, c.nota
     from coleccion c
     left join tiendas t on t.id = c.tienda_compra_id
+    left join repisas r on r.id = c.repisa_id
     order by c.nombre_perfume;
+end;
+$$;
+
+-- Edita nombre/referencia/comentario/repisa/nota de un perfume ya
+-- existente en Colección (primera vez que Colección admite editar algo
+-- más que eliminarlo).
+create or replace function public.editar_coleccion(
+  p_token uuid, p_coleccion_id uuid, p_nombre_perfume text, p_referencia text,
+  p_comentario text, p_repisa_id uuid, p_nota numeric
+)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+begin
+  perform check_token(p_token);
+  update coleccion
+    set nombre_perfume = trim(p_nombre_perfume),
+        referencia = nullif(trim(coalesce(p_referencia, '')), ''),
+        comentario = p_comentario,
+        repisa_id = p_repisa_id,
+        nota = p_nota
+    where id = p_coleccion_id;
+end;
+$$;
+
+-- Actualización en lote de repisa y/o nota a partir de la respuesta de
+-- una IA externa (ver "Exportar para asignar repisas y notas" en Datos).
+-- Cada item puede traer solo uno de los dos campos resuelto — el que
+-- venga null no toca el valor que ya tenía esa fila.
+create or replace function public.actualizar_repisas_notas_coleccion(p_token uuid, p_items jsonb)
+returns int
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_count int := 0;
+begin
+  perform check_token(p_token);
+  update coleccion c
+    set repisa_id = coalesce((item->>'repisa_id')::uuid, c.repisa_id),
+        nota = coalesce((item->>'nota')::numeric, c.nota)
+  from jsonb_array_elements(p_items) as item
+  where c.id = (item->>'id')::uuid;
+  get diagnostics v_count = row_count;
+  return v_count;
 end;
 $$;
 
@@ -1239,8 +1330,10 @@ begin
       select coalesce(jsonb_agg(row_to_json(x) order by x.nombre_perfume), '[]'::jsonb)
       from (
         select c.id, c.nombre_perfume, c.referencia, c.comentario, c.canal_compra,
-               c.precio, c.fecha_compra, t.nombre as tienda_nombre
-        from coleccion c left join tiendas t on t.id = c.tienda_compra_id
+               c.precio, c.fecha_compra, c.nota, t.nombre as tienda_nombre, r.nombre as repisa_nombre
+        from coleccion c
+          left join tiendas t on t.id = c.tienda_compra_id
+          left join repisas r on r.id = c.repisa_id
       ) x
     ),
     'lista_negra', (
@@ -1508,12 +1601,14 @@ revoke all on function
   public.editar_pendiente_probar, public.listar_tiendas_descartadas,
   public.marcar_agotado_general, public.listar_agotados, public.editar_agotado,
   public.revisar_agotado, public.eliminar_agotado,
-  public.listar_coleccion, public.eliminar_de_coleccion, public.listar_lista_negra,
+  public.listar_repisas, public.crear_repisa,
+  public.listar_coleccion, public.editar_coleccion, public.eliminar_de_coleccion, public.listar_lista_negra,
   public.editar_lista_negra, public.eliminar_de_lista_negra,
   public.listar_candidatos_duplicado, public.exportar_datos, public.generar_reporte_seguimiento,
   public.buscar_global,
   public.importar_coleccion, public.importar_lista_negra, public.importar_por_probar,
-  public.actualizar_referencias_coleccion, public.actualizar_referencias_lista_negra
+  public.actualizar_referencias_coleccion, public.actualizar_referencias_lista_negra,
+  public.actualizar_repisas_notas_coleccion
   from public;
 
 grant execute on function public.validar_pin(text) to anon;
@@ -1550,7 +1645,10 @@ grant execute on function public.listar_agotados(uuid) to anon;
 grant execute on function public.editar_agotado(uuid, uuid, text, text, text) to anon;
 grant execute on function public.revisar_agotado(uuid, uuid, uuid, numeric, text, text, text) to anon;
 grant execute on function public.eliminar_agotado(uuid, uuid) to anon;
+grant execute on function public.listar_repisas(uuid) to anon;
+grant execute on function public.crear_repisa(uuid, text) to anon;
 grant execute on function public.listar_coleccion(uuid) to anon;
+grant execute on function public.editar_coleccion(uuid, uuid, text, text, text, uuid, numeric) to anon;
 grant execute on function public.eliminar_de_coleccion(uuid, uuid) to anon;
 grant execute on function public.listar_lista_negra(uuid) to anon;
 grant execute on function public.editar_lista_negra(uuid, uuid, text, text, text, text) to anon;
@@ -1563,6 +1661,7 @@ grant execute on function public.importar_lista_negra(uuid, jsonb) to anon;
 grant execute on function public.importar_por_probar(uuid, jsonb) to anon;
 grant execute on function public.actualizar_referencias_coleccion(uuid, jsonb) to anon;
 grant execute on function public.actualizar_referencias_lista_negra(uuid, jsonb) to anon;
+grant execute on function public.actualizar_repisas_notas_coleccion(uuid, jsonb) to anon;
 
 -- check_token y armar_snapshot_por_probar se llaman solo internamente
 -- desde otras funciones security definer; no necesitan ejecutarse desde

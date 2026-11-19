@@ -81,7 +81,11 @@ export const api = {
   deshacerMovimiento: (p_historial_id) => rpc('deshacer_movimiento', { p_historial_id }),
   listarMovimientosRecientes: () => rpc('listar_movimientos_recientes'),
 
+  listarRepisas: () => rpc('listar_repisas'),
+  crearRepisa: (p_nombre) => rpc('crear_repisa', { p_nombre }),
+
   listarColeccion: () => rpc('listar_coleccion'),
+  editarColeccion: (args) => rpc('editar_coleccion', args),
   eliminarDeColeccion: (p_coleccion_id) => rpc('eliminar_de_coleccion', { p_coleccion_id }),
   listarListaNegra: () => rpc('listar_lista_negra'),
   editarListaNegra: (args) => rpc('editar_lista_negra', args),
@@ -100,4 +104,5 @@ export const api = {
 
   actualizarReferenciasColeccion: (p_items) => rpc('actualizar_referencias_coleccion', { p_items }),
   actualizarReferenciasListaNegra: (p_items) => rpc('actualizar_referencias_lista_negra', { p_items }),
+  actualizarRepisasNotasColeccion: (p_items) => rpc('actualizar_repisas_notas_coleccion', { p_items }),
 };

@@ -1,11 +1,12 @@
 import { api } from '../api.js';
-import { getTiendas } from '../store.js';
+import { getTiendas, getRepisas } from '../store.js';
 import { openModal, closeModal } from '../modal.js';
 import { parseDelimitado, normalizarNombre, escapeHtml, toast } from '../utils.js';
 import { resetNumeracion } from './porProbar.js';
 
 const content = document.getElementById('importar-content');
 const actualizarRefContent = document.getElementById('actualizar-referencias-content');
+const actualizarRepisasNotasContent = document.getElementById('actualizar-repisas-notas-content');
 let initialized = false;
 
 document.getElementById('btn-exportar').addEventListener('click', async () => {
@@ -179,6 +180,51 @@ function mostrarExportReferencias(texto, total) {
   });
 }
 
+document.getElementById('btn-exportar-repisas-notas').addEventListener('click', async () => {
+  try {
+    const coleccion = await api.listarColeccion();
+    const faltan = coleccion.filter((p) => !p.repisa_id || p.nota == null);
+    if (!faltan.length) {
+      toast('Toda la colección ya tiene repisa y nota 🎉');
+      return;
+    }
+    const texto = buildExportRepisasNotasTexto(faltan);
+    mostrarExportRepisasNotas(texto, faltan.length);
+  } catch (err) {
+    toast('Error: ' + err.message, true);
+  }
+});
+
+function buildExportRepisasNotasTexto(items) {
+  const lineas = items.map((p) => `${p.id}|${p.nombre_perfume}`).join('\n');
+  return `Para cada perfume de la lista de abajo, decime en qué repisa está guardado y qué nota (del 1 al 7) le pondrías, según la información/fotos que te voy a dar por separado. Devuélveme exactamente la misma lista completa (mismas líneas, mismo orden, sin agregar ni quitar ninguna), agregando al final de cada línea " | repisa | nota". No cambies el ID. Si no tienes información para alguno de los dos campos, escribe "?" en ese campo en vez de inventar uno.
+
+${lineas}`;
+}
+
+function mostrarExportRepisasNotas(texto, total) {
+  const el = openModal(`
+    <h3>Exportar para asignar repisas y notas</h3>
+    <p class="import-format">${total} perfume(s) sin repisa y/o sin nota. Pega este texto en una IA (junto con la info/fotos que uses para decidirlo) y después pega su respuesta en "Actualizar repisas y notas", más abajo en esta misma pestaña.</p>
+    <textarea id="export-repisas-notas-texto" rows="14" readonly
+      style="width:100%; font-family:ui-monospace,monospace; font-size:0.8rem; white-space:pre-wrap;">${escapeHtml(texto)}</textarea>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-secondary" data-action="cerrar">Cerrar</button>
+      <button type="button" class="btn btn-primary" data-action="copiar">Copiar</button>
+    </div>
+  `);
+  el.querySelector('[data-action="cerrar"]').addEventListener('click', closeModal);
+  el.querySelector('[data-action="copiar"]').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(texto);
+      toast('Copiado al portapapeles');
+    } catch (err) {
+      el.querySelector('#export-repisas-notas-texto').select();
+      toast('No se pudo copiar automático — seleccionamos el texto, cópialo con Ctrl/Cmd+C', true);
+    }
+  });
+}
+
 function mostrarExportTienda(cantidadTiendas, texto) {
   const el = openModal(`
     <h3>Exportar — ${cantidadTiendas} tienda${cantidadTiendas === 1 ? '' : 's'}</h3>
@@ -225,6 +271,7 @@ export async function render() {
   wireSection('por-probar', importarPorProbar);
 
   initActualizarReferencias();
+  initActualizarRepisasNotas();
 }
 
 function initActualizarReferencias() {
@@ -308,6 +355,101 @@ function parseActualizarReferencias(texto) {
     else coleccion.push(item);
   }
   return { coleccion, listaNegra, omitidas };
+}
+
+function initActualizarRepisasNotas() {
+  actualizarRepisasNotasContent.innerHTML = `
+    <div class="import-section">
+      <div class="import-format">
+        Pega acá la respuesta completa que te dio la IA a partir del texto de
+        "📦 Exportar para asignar repisas y notas". Formato de cada línea:
+        <code>id | nombre | repisa | nota</code>. Si la repisa todavía no
+        existe en el catálogo, se crea automáticamente la primera vez que
+        aparece (¡cuidado con que la IA escriba siempre el mismo nombre!).
+      </div>
+      <textarea class="import-textarea" data-role="textarea" placeholder="Pega aquí la respuesta de la IA..."></textarea>
+      <div style="margin-top:8px;">
+        <button class="btn btn-primary btn-block" data-role="actualizar">Actualizar repisas y notas</button>
+      </div>
+      <div class="import-result" data-role="resultado"></div>
+    </div>
+  `;
+
+  const textarea = actualizarRepisasNotasContent.querySelector('[data-role="textarea"]');
+  const btn = actualizarRepisasNotasContent.querySelector('[data-role="actualizar"]');
+  const resultado = actualizarRepisasNotasContent.querySelector('[data-role="resultado"]');
+
+  btn.addEventListener('click', async () => {
+    if (!textarea.value.trim()) {
+      resultado.innerHTML = '<span class="line-error">Pega el texto con las repisas y notas antes de actualizar.</span>';
+      return;
+    }
+    btn.disabled = true;
+    resultado.textContent = 'Actualizando…';
+    try {
+      const { items, omitidas } = await parseActualizarRepisasNotas(textarea.value);
+      if (!items.length) {
+        resultado.innerHTML = '<span class="line-error">No se encontró ninguna línea válida.</span>';
+        return;
+      }
+      const count = await api.actualizarRepisasNotasColeccion(items);
+      let html = `✅ ${count} perfume(s) actualizados.`;
+      if (omitidas > 0) {
+        html += `<br/>${omitidas} línea(s) sin ningún dato nuevo (la IA respondió "?" en ambos campos) — se omitieron.`;
+      }
+      resultado.innerHTML = html;
+      textarea.value = '';
+      toast('Repisas y notas actualizadas');
+    } catch (err) {
+      resultado.innerHTML = `<span class="line-error">Error: ${escapeHtml(err.message)}</span>`;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
+async function parseActualizarRepisasNotas(texto) {
+  const repisas = await getRepisas(true);
+  const repisaMap = new Map(repisas.map((r) => [normalizarNombre(r.nombre), r.id]));
+  const items = [];
+  let omitidas = 0;
+
+  for (const rawLinea of (texto || '').split('\n')) {
+    const linea = rawLinea.trim();
+    if (!linea || linea.startsWith('#')) continue;
+
+    const campos = linea.split('|').map((c) => c.trim());
+    if (!UUID_RE.test(campos[0])) continue; // no es una línea de datos
+
+    const repisaTexto = campos[2];
+    const notaTexto = campos[3];
+
+    let repisaId = null;
+    if (repisaTexto && repisaTexto !== '?') {
+      const key = normalizarNombre(repisaTexto);
+      repisaId = repisaMap.get(key);
+      if (!repisaId) {
+        const nueva = await api.crearRepisa(repisaTexto);
+        repisaId = nueva.id;
+        repisaMap.set(key, repisaId);
+      }
+    }
+
+    let nota = null;
+    if (notaTexto && notaTexto !== '?') {
+      const n = Number(notaTexto);
+      if (!Number.isNaN(n) && n >= 1 && n <= 7) nota = n;
+    }
+
+    if (repisaId == null && nota == null) {
+      omitidas++;
+      continue;
+    }
+
+    items.push({ id: campos[0], repisa_id: repisaId, nota });
+  }
+
+  return { items, omitidas };
 }
 
 function section(id, title, formato, ejemplo) {

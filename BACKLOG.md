@@ -250,60 +250,29 @@ probador" al elegir la nueva tienda.
 
 ---
 
-## 23. Registrar la repisa donde está guardado cada perfume de Colección
+## ~~23. Registrar la repisa donde está guardado cada perfume de Colección~~ — Hecho (v23)
 
-**Problema**: con más de 170 perfumes repartidos en 6 repisas físicas,
-hoy no hay forma de registrar ni consultar dónde está guardado cada uno
-— hay que recordarlo o buscarlo a ojo. La repisa no se asigna en el
-momento de comprar (el flujo real es: "Ya lo compré" → más adelante se
-exporta el listado de Colección, se le pide a una IA externa que la
-asigne con la info/fotos que el usuario ya tiene, y se pega la
-respuesta de vuelta) — no sirve un selector dentro de "Ya lo compré".
-
-**Idea de solución**: catálogo fijo de repisas (tabla nueva `repisas`,
-mismo patrón que `tiendas`: editable, sin texto libre, para evitar que
-la misma repisa quede escrita de formas distintas entre 170 perfumes) +
-columna `repisa_id` en `coleccion`. Reusar el patrón ya implementado
-para "Exportar referencias faltantes" (item 13): un botón en Datos que
-arma `id|nombre` de los perfumes de Colección, y una sección de
-"Actualizar" donde se pega la respuesta de la IA y actualiza en lote —
-matcheando el nombre de repisa contra el catálogo (mismo matching por
-nombre normalizado que ya se usa al importar tiendas en "Por Probar"/
-"Lista Negra"). De paso, sumar un filtro/agrupador por repisa en la
-pestaña Colección para poder ubicar un perfume rápido.
-
-**Nota (nov. 2026)**: la carga inicial de este campo se hace en conjunto
-con la del item 24 (Nota 1-7) — ver ahí el formato combinado
-`id|repisa|nota` para no tener que armar dos cargas separadas para los
-170+ perfumes existentes.
+Implementado tal cual estaba pensado: catálogo fijo `repisas` (modal
+"🗄 Repisas" en Colección, listar + agregar) + `repisa_id` en
+`coleccion`, filtro por repisa y chip en la tarjeta. La carga inicial se
+resolvió junto con el item 24, ver ahí.
 
 ---
 
-## 24. Nota (1-7) de cada perfume de Colección
+## ~~24. Nota (1-7) de cada perfume de Colección~~ — Hecho (v23)
 
-**Problema**: a los pocos días de probar un perfume recién comprado, el
-usuario le pone una nota del 1 al 7 — define si va adelante o atrás en
-la repisa, y con el tiempo refleja sus gustos. Hoy no hay dónde
-guardarla, y Colección ni siquiera tiene edición todavía (solo
-"Eliminar"). A diferencia de la repisa (item 23), la nota la decide el
-usuario mismo después de probarlo unos días, no una IA externa.
-
-**Idea de solución**: columna `nota numeric` (1-7) en `coleccion`,
-habilitar por primera vez tarjeta clickeable → modal de editar
-(nombre/referencia/comentario/nota), mostrarla como chip en la tarjeta,
-y sumar un tercer modo al botón de orden de Colección ("Ordenar: Nota",
-de mayor a menor). Para una compra nueva, se carga perfume por perfume
-desde ese modal de editar cuando el usuario decide la nota.
-
-**Carga inicial (170+ perfumes existentes)**: no tiene sentido cargarla
-uno por uno a mano. Se decidió combinarla con la carga inicial de
-repisas (item 23) en un solo ciclo exportar/pegar: un botón en Datos
-arma `id|nombre` de todos los perfumes de Colección, el usuario le pide
-a su IA el informe ya armado en formato `id|repisa|nota` (a partir de lo
-que ya tiene decidido/anotado), y se pega la respuesta en una sola
-sección de "Actualizar repisas y notas" que actualiza ambos campos en
-lote (cualquiera de los dos puede venir vacío/"?" para omitirlo en esa
-línea, mismo criterio tolerante que ya usa "Actualizar referencias").
+Implementado: columna `nota` (1-7, con check de rango) en `coleccion`,
+primera edición habilitada para Colección (tarjeta clickeable → modal
+con nombre/referencia/comentario/repisa/nota), chip "⭐ N" en la
+tarjeta, y tercer modo "Ordenar: Nota" en el botón de orden. La carga
+inicial de los 170+ perfumes se combinó con la de repisas en un solo
+ciclo: botón "📦 Exportar para asignar repisas y notas" en Datos arma
+`id|nombre`, se le pide a la IA el formato `id|nombre|repisa|nota`, y se
+pega en una sola sección "Actualizar repisas y notas" que actualiza
+ambos campos en lote (cualquiera de los dos puede venir "?" para
+omitirlo en esa línea). Se decidió que si la IA escribe una repisa que
+todavía no existe en el catálogo, se crea automáticamente la primera
+vez que aparece (en vez de exigir crearlas todas a mano antes).
 
 ---
 
