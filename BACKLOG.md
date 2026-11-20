@@ -285,11 +285,11 @@ nota — no hay forma de preguntar, por ejemplo, "¿qué perfumes con nota
 **Idea de solución**: agregar un filtro por nota combinable con el de
 repisa (ambos se aplican a la vez, como ya hace la búsqueda por texto).
 Se decidió NO usar un `<select multiple>` nativo (incómodo en celular,
-hay que mantener presionado para elegir varios) — en su lugar, chips/
-botones del 1 al 7 tipo toggle (mismo patrón que "Solo sin probador"/
-"★ Destacados" en Por Probar), donde se pueden marcar varias notas a la
-vez y el filtro muestra los perfumes que coincidan con cualquiera de
-las marcadas.
+hay que mantener presionado para elegir varios) — en su lugar, una
+lista de checkboxes del 1 al 7 (mismo patrón visual que la selección de
+tiendas en "Exportar tienda", Datos), donde se pueden marcar varias
+notas a la vez y el filtro muestra los perfumes que coincidan con
+cualquiera de las marcadas.
 
 ---
 
