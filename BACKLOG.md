@@ -276,4 +276,21 @@ vez que aparece (en vez de exigir crearlas todas a mano antes).
 
 ---
 
+## 25. Filtrar Colección por nota (selección múltiple), combinable con repisa
+
+**Problema**: hoy se puede filtrar Colección por repisa, pero no por
+nota — no hay forma de preguntar, por ejemplo, "¿qué perfumes con nota
+7 tengo en la Repisa 2?" sin revisar tarjeta por tarjeta.
+
+**Idea de solución**: agregar un filtro por nota combinable con el de
+repisa (ambos se aplican a la vez, como ya hace la búsqueda por texto).
+Se decidió NO usar un `<select multiple>` nativo (incómodo en celular,
+hay que mantener presionado para elegir varios) — en su lugar, chips/
+botones del 1 al 7 tipo toggle (mismo patrón que "Solo sin probador"/
+"★ Destacados" en Por Probar), donde se pueden marcar varias notas a la
+vez y el filtro muestra los perfumes que coincidan con cualquiera de
+las marcadas.
+
+---
+
 *(Agregar más ideas acá abajo a medida que surjan, en el mismo formato.)*
